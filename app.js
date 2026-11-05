@@ -38,7 +38,7 @@
 
   // ---------- Storage ----------
   var KEY = 'wordmix.v1';
-  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 5, hint3: true, sound: true, vibrate: true, theme: 'original' }, boards: {}, daily: {}, deviceId: null, last: { mode: 'classic', size: 4, minLen: 3, partyTime: 180 } };
+  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 5, hint3: true, sound: true, vibrate: true, theme: 'auto' }, boards: {}, daily: {}, deviceId: null, last: { mode: 'classic', size: 4, minLen: 3, partyTime: 180 } };
   var S;
   try { S = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { S = {}; }
   S = Object.assign({}, DEFAULTS, S);
@@ -48,13 +48,21 @@
   if (!S.deviceId) S.deviceId = Math.random().toString(36).slice(2) + Date.now().toString(36);
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
   save();
+  // Older saves defaulted to 'original' before the player could choose; follow the phone instead.
+  if (S.settings.theme === 'original' && !S.settings.themeChosen) S.settings.theme = 'auto';
+  var darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   function applyTheme() {
-    var dark = S.settings.theme === 'dark';
+    var t = S.settings.theme;
+    var dark = t === 'dark' || (t === 'auto' && darkQuery && darkQuery.matches);
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
     var m = document.querySelector('meta[name="theme-color"]');
     if (m) m.setAttribute('content', dark ? '#E2621C' : '#F26B21');
   }
   applyTheme();
+  if (darkQuery) {
+    var onScheme = function () { if (S.settings.theme === 'auto') applyTheme(); };
+    if (darkQuery.addEventListener) darkQuery.addEventListener('change', onScheme); else if (darkQuery.addListener) darkQuery.addListener(onScheme);
+  }
   function rememberPlayer(p) {
     S.saved = S.saved.filter(function (x) { return x.name.toLowerCase() !== p.name.toLowerCase(); });
     S.saved.unshift({ name: p.name, avatar: p.avatar });
@@ -1001,7 +1009,7 @@
       var body = $('[data-body]', scr.el);
       body.innerHTML =
         '<div class="card"><span class="label">Colours</span><div class="seg">' +
-        '<button data-theme="original" aria-pressed="' + (st.theme !== 'dark') + '">Original</button><button data-theme="dark" aria-pressed="' + (st.theme === 'dark') + '">Dark</button></div></div>' +
+        '<button data-theme="auto" aria-pressed="' + (st.theme === 'auto') + '">Match phone</button><button data-theme="original" aria-pressed="' + (st.theme === 'original') + '">Original</button><button data-theme="dark" aria-pressed="' + (st.theme === 'dark') + '">Dark</button></div></div>' +
         '<div class="card"><b style="font-size:18px">Hints</b>' +
         '<p class="hint-text">A lightbulb pops up above the grid when you haven\u2019t made a move for a while. It stays for 3 seconds. You can also change this from the \u2630 menu during a game.</p>' +
         hintControls() + '</div>' +
@@ -1010,7 +1018,7 @@
         '<button class="btn btn-white" data-clear>Clear leaderboards</button>' +
         '<p class="hint-text" style="text-align:center">Word list: ' + WORDS.length.toLocaleString() + ' British English words.</p>';
       bindHintControls(body, render);
-      on(body, '[data-theme]', 'click', function (e) { st.theme = e.currentTarget.getAttribute('data-theme'); save(); applyTheme(); render(); });
+      on(body, '[data-theme]', 'click', function (e) { st.theme = e.currentTarget.getAttribute('data-theme'); st.themeChosen = true; save(); applyTheme(); render(); });
       on(body, '[data-tg]', 'click', function (e) { var k = e.currentTarget.getAttribute('data-tg'); st[k] = !st[k]; save(); render(); if (k === 'vibrate') buzz(20); });
       $('[data-profile]', body).onclick = function () { editMyProfile(function () { settings(back); }); };
       $('[data-clear]', body).onclick = function () {

@@ -1,5 +1,5 @@
 /* Word Mix offline support: keeps the game, word list, fonts and QR scanner on the phone. */
-var VERSION = 'wordmix-v4';
+var VERSION = 'wordmix-v5';
 var SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'qr.js', 'avatars.js', 'net.js', 'words.txt', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-64.png'

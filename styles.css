@@ -58,6 +58,35 @@
   --band-ink: #2A1203;
   color-scheme: dark;
 }
+/* Phone in dark mode before the app has chosen (also tells Samsung Internet not to repaint the page) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16120E;
+    --ink: #F6EDE2;
+    --muted: #BBA894;
+    --orange: #E2621C;
+    --orange-dk: #9A3F0B;
+    --orange-btn: #BF4E11;
+    --card: #29221B;
+    --card-sh: #0B0806;
+    --cream: #2F271F;
+    --board: #2B241D;
+    --good-ink: #8FD86F;
+    --bad: #FF8F75;
+    --bar-bg: #4A3A2C;
+    --mode-sel: #3D2617;
+    --first: #3D2617;
+    --first-sh: #120C07;
+    --sheet: #211B15;
+    --pill-bg: #0E0B08;
+    --toast-bg: #F6EDE2;
+    --toast-fg: #16120E;
+    --hint-ink: #9DBBFF;
+    --band-ink: #2A1203;
+    color-scheme: dark;
+  }
+}
+
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); }
 body { overscroll-behavior: none; -webkit-font-smoothing: antialiased; }
