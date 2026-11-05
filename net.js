@@ -5,16 +5,11 @@
   var PREFIX = 'WM1';
   var JSQR_URL = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
 
-  // The host's code leaves out its own addresses. The joining device then has nobody to call and simply
-  // waits; once the host scans the reply, the host calls the joiner and the joiner answers. This stops the
-  // joiner giving up if the host takes a while to scan. (It also makes the host's QR code smaller.)
-  function slimSdp(sdp, isOffer) {
+  function slimSdp(sdp) {
     return sdp.split(/\r?\n/).filter(function (l) {
       if (!l) return false;
-      if (isOffer && /^a=(candidate|end-of-candidates)/.test(l)) return false;
       if (/^a=candidate:.* tcp /i.test(l)) return false;
-      if (/^a=(extmap|msid-semantic)/.test(l)) return false;
-      if (!isOffer && /^a=ice-options/.test(l)) return false;
+      if (/^a=(extmap|ice-options|msid-semantic)/.test(l)) return false;
       return true;
     }).join('\r\n') + '\r\n';
   }
@@ -35,7 +30,7 @@
     return new TextDecoder().decode(await new Response(ds.readable).arrayBuffer());
   }
   async function pack(desc) {
-    var c = await compress(slimSdp(desc.sdp, desc.type === 'offer'));
+    var c = await compress(slimSdp(desc.sdp));
     return PREFIX + (desc.type === 'offer' ? 'O' : 'A') + c.z + WMQR.b45encode(c.bytes);
   }
   async function unpack(code) {
@@ -54,58 +49,31 @@
       });
     });
   }
-  // Which addresses this device offered: a real one (192.168…) or a hidden private name (….local).
-  function addrInfo(sdp) {
-    var out = [];
-    sdp.split(/\r?\n/).forEach(function (l) {
-      var m = /^a=candidate:\S+ \d+ udp \d+ (\S+) \d+ typ (\w+)/i.exec(l);
-      if (m && out.indexOf(m[1]) < 0) out.push(m[1]);
-    });
-    if (!out.length) return 'no network address found';
-    return out.map(function (a) { return /\.local$/.test(a) ? 'hidden name' : a; }).join(', ');
-  }
   function newPc() { return new RTCPeerConnection({ iceServers: [] }); }
-
-  // Phones only reveal their real Wi-Fi address to the connection while the camera is running.
-  // Without it they use a private name that the other phone often can't find on a hotspot.
-  // So the camera runs (unseen) for the second or two it takes to prepare a code.
-  async function holdCamera() {
-    try {
-      var s = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false });
-      return function () { s.getTracks().forEach(function (t) { t.stop(); }); };
-    } catch (e) { return function () {}; }
-  }
 
   // Host: one offer per guest.
   async function createOffer() {
-    var release = await holdCamera();
-    try {
-      var pc = newPc();
-      var dc = pc.createDataChannel('wordmix', { ordered: true });
-      await pc.setLocalDescription(await pc.createOffer());
-      await waitIce(pc);
-      return { pc: pc, dc: dc, code: await pack(pc.localDescription), info: addrInfo(pc.localDescription.sdp) };
-    } finally { release(); }
+    var pc = newPc();
+    var dc = pc.createDataChannel('wordmix', { ordered: true });
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitIce(pc);
+    return { pc: pc, dc: dc, code: await pack(pc.localDescription) };
   }
   async function acceptAnswer(pc, code) {
     var d = await unpack(code);
     if (d.type !== 'answer') throw new Error('That is the host code. Scan the code on your friend’s phone.');
     await pc.setRemoteDescription(d);
-    return addrInfo(d.sdp);
   }
   // Guest: answer the host's offer.
   async function answerOffer(code) {
     var d = await unpack(code);
     if (d.type !== 'offer') throw new Error('That is a reply code. Scan the code on the host’s phone.');
-    var release = await holdCamera();
-    try {
-      var pc = newPc();
-      var dcPromise = new Promise(function (r) { pc.ondatachannel = function (e) { r(e.channel); }; });
-      await pc.setRemoteDescription(d);
-      await pc.setLocalDescription(await pc.createAnswer());
-      await waitIce(pc);
-      return { pc: pc, dcPromise: dcPromise, code: await pack(pc.localDescription), info: addrInfo(pc.localDescription.sdp) };
-    } finally { release(); }
+    var pc = newPc();
+    var dcPromise = new Promise(function (r) { pc.ondatachannel = function (e) { r(e.channel); }; });
+    await pc.setRemoteDescription(d);
+    await pc.setLocalDescription(await pc.createAnswer());
+    await waitIce(pc);
+    return { pc: pc, dcPromise: dcPromise, code: await pack(pc.localDescription) };
   }
 
   // Camera access also lets the browser share this phone's local network address,
@@ -134,8 +102,7 @@
   }
 
   // Opens the camera inside `host` and calls onCode(text) when a Word Mix code is seen.
-  async function startScanner(video, onCode, onError, opts) {
-    opts = opts || {};
+  async function startScanner(video, onCode, onError) {
     var stopped = false, stream = null, timer = null;
     var detector = null;
     try {
@@ -149,7 +116,7 @@
       try { decode = await loadJsQR(); } catch (e) { onError(e); return { stop: function () {} }; }
     }
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: opts.facing || 'environment', width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false });
     } catch (e) {
       onError(new Error('Camera access was blocked. Allow the camera for this site, or use the text code.'));
       return { stop: function () {} };
@@ -173,13 +140,13 @@
             canvas.width = Math.round(w * s); canvas.height = Math.round(h * s);
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            var r = decode(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+            var r = decode(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
             if (r && r.data && r.data.indexOf(PREFIX) === 0) text = r.data;
           }
           if (text) { api.stop(); onCode(text); return; }
         }
       } catch (e) {}
-      timer = setTimeout(tick, opts.interval || 160);
+      timer = setTimeout(tick, 160);
     }
     var api = {
       stop: function () {
