@@ -488,3 +488,7 @@ h2.title { margin: 0; font-size: 24px; font-weight: 800; }
 
 .ready-bar { position: sticky; bottom: 0; z-index: 5; padding: 10px max(16px, calc((100% - var(--content, 640px)) / 2)) calc(12px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 70%, rgba(0,0,0,0)); }
 .ready-bar .ready-btn { width: 100%; }
+
+.seg.hint-seg { grid-auto-flow: row; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.seg.hint-seg button { font-size: 14px; line-height: 1.15; padding: 4px 2px; }
+@media (max-width: 520px) { .seg.hint-seg { grid-template-columns: repeat(3, minmax(0, 1fr)); } .seg.hint-seg button { font-size: 15px; } }

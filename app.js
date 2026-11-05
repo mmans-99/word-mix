@@ -38,13 +38,15 @@
 
   // ---------- Storage ----------
   var KEY = 'wordmix.v1';
-  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 5, hint3: true, sound: true, vibrate: true, theme: 'auto' }, boards: {}, daily: {}, deviceId: null, last: { mode: 'classic', size: 4, minLen: 3, partyTime: 180 } };
+  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 8, hint3: true, sound: true, vibrate: true, theme: 'auto' }, boards: {}, daily: {}, deviceId: null, last: { mode: 'classic', size: 4, minLen: 3, partyTime: 180 } };
   var S;
   try { S = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { S = {}; }
   S = Object.assign({}, DEFAULTS, S);
   S.settings = Object.assign({}, DEFAULTS.settings, S.settings || {});
   S.last = Object.assign({}, DEFAULTS.last, S.last || {});
   S.daily = S.daily || {};
+  // Older saves used a 5-second default; use the new 8-second default unless the player chose a setting.
+  if (!S.settings.hintChosen && S.settings.hintDelay === 5) S.settings.hintDelay = 8;
   if (!S.deviceId) S.deviceId = Math.random().toString(36).slice(2) + Date.now().toString(36);
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
   save();
@@ -720,7 +722,7 @@
       }
       function hintMenu() {
         o.innerHTML = '<div class="dialog" role="dialog" aria-modal="true" style="text-align:left"><h2 class="title">Hint settings</h2>' +
-          '<p class="hint-text">The lightbulb pops up above the grid when you haven’t made a move for this long. It stays for 3 seconds.</p>' +
+          '<p class="hint-text">When you haven’t made a move for a while, a lightbulb pops up above the grid for 3 seconds. Choose how often that happens.</p>' +
           hintControls() + '<button class="btn btn-orange" data-back2>Done</button></div>';
         bindHintControls(o, hintMenu);
         $('[data-back2]', o).onclick = main;
@@ -1173,13 +1175,15 @@
   // ---------- Hint controls (settings screen and in-game menu) ----------
   function hintControls() {
     var st = S.settings;
-    return '<span class="label">Show the hint after</span><div class="seg">' +
-      [[0, 'Off'], [5, '5s'], [10, '10s'], [20, '20s'], [30, '30s']].map(function (o) { return '<button data-delay="' + o[0] + '" aria-pressed="' + (st.hintDelay === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div>' +
+    var opts = [[5, 'Lots'], [8, 'Sometimes'], [15, 'Rarely'], [25, 'Very little'], [0, 'None']];
+    var known = opts.some(function (o) { return o[0] === st.hintDelay; });
+    return '<span class="label">How often hints appear</span><div class="seg hint-seg">' +
+      opts.map(function (o) { return '<button data-delay="' + o[0] + '" aria-pressed="' + (known ? st.hintDelay === o[0] : o[0] === 8) + '">' + o[1] + '</button>'; }).join('') + '</div>' +
       '<span class="label">Hints show</span><div class="seg">' +
       '<button data-h3="1" aria-pressed="' + st.hint3 + '">3-letter words</button><button data-h3="0" aria-pressed="' + !st.hint3 + '">Any word</button></div>';
   }
   function bindHintControls(root, rerender) {
-    on(root, '[data-delay]', 'click', function (e) { S.settings.hintDelay = +e.currentTarget.getAttribute('data-delay'); save(); rerender(); });
+    on(root, '[data-delay]', 'click', function (e) { S.settings.hintDelay = +e.currentTarget.getAttribute('data-delay'); S.settings.hintChosen = true; save(); rerender(); });
     on(root, '[data-h3]', 'click', function (e) { S.settings.hint3 = e.currentTarget.getAttribute('data-h3') === '1'; save(); rerender(); });
   }
 
