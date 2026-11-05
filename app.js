@@ -804,7 +804,7 @@
         '<div class="card">' + toggle('sound', 'Sound effects', st.sound) + toggle('vibrate', 'Vibration', st.vibrate) + '</div>' +
         '<button class="btn btn-white" data-profile>' + I.user + 'Edit my profile</button>' +
         '<button class="btn btn-white" data-clear>Clear leaderboards</button>' +
-        '<p class="hint-text" style="text-align:center">Word list: ' + WORDS.length.toLocaleString() + ' English words, UK and US spellings.</p>';
+        '<p class="hint-text" style="text-align:center">Word list: ' + WORDS.length.toLocaleString() + ' British English words.</p>';
       on(body, '[data-delay]', 'click', function (e) { st.hintDelay = +e.currentTarget.getAttribute('data-delay'); save(); render(); });
       on(body, '[data-h3]', 'click', function (e) { st.hint3 = e.currentTarget.getAttribute('data-h3') === '1'; save(); render(); });
       on(body, '[data-tg]', 'click', function (e) { var k = e.currentTarget.getAttribute('data-tg'); st[k] = !st[k]; save(); render(); if (k === 'vibrate') buzz(20); });
