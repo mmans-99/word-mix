@@ -12,7 +12,12 @@
   function todayKey() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
   function hashStr(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   function rng(seed) { var a = seed >>> 0; return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-  function pts(len) { if (len <= 4) return 1; if (len === 5) return 2; if (len === 6) return 3; if (len === 7) return 5; return 11; }
+  // 3 letters 1, 4 letters 2, 5 letters 3, then +1 for each extra letter.
+  function pts(len) { if (len <= 3) return 1; if (len === 4) return 2; if (len === 5) return 3; return len - 2; }
+  // Rarity scoring: common letters are worth little, rare ones a lot.
+  var LETTER_VALUE = { a: 1, b: 3, c: 3, d: 2, e: 1, f: 4, g: 2, h: 4, i: 1, j: 8, k: 5, l: 1, m: 3, n: 1, o: 1, p: 3, q: 10, r: 1, s: 1, t: 1, u: 1, v: 4, w: 4, x: 8, y: 4, z: 10 };
+  function rarityPts(w) { var t = 0; for (var i = 0; i < w.length; i++) t += LETTER_VALUE[w[i]] || 1; return t; }
+  function scoreOf(w, scoring) { return scoring === 'rarity' ? rarityPts(w) : pts(w.length); }
   function plural(n, a, b) { return n + ' ' + (n === 1 ? a : b); }
 
   var I = {
@@ -26,19 +31,30 @@
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
-    menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M9 6v12M15 6v12"/></svg>',
+    menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+    calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
     play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
   };
 
   // ---------- Storage ----------
   var KEY = 'wordmix.v1';
-  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 5, hint3: true, sound: true, vibrate: true }, boards: {}, last: { mode: 'classic', size: 4, minLen: 3 } };
+  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 5, hint3: true, sound: true, vibrate: true, theme: 'original' }, boards: {}, daily: {}, deviceId: null, last: { mode: 'classic', size: 4, minLen: 3, partyTime: 180 } };
   var S;
   try { S = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { S = {}; }
   S = Object.assign({}, DEFAULTS, S);
   S.settings = Object.assign({}, DEFAULTS.settings, S.settings || {});
   S.last = Object.assign({}, DEFAULTS.last, S.last || {});
+  S.daily = S.daily || {};
+  if (!S.deviceId) S.deviceId = Math.random().toString(36).slice(2) + Date.now().toString(36);
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+  save();
+  function applyTheme() {
+    var dark = S.settings.theme === 'dark';
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', dark ? '#E2621C' : '#F26B21');
+  }
+  applyTheme();
   function rememberPlayer(p) {
     S.saved = S.saved.filter(function (x) { return x.name.toLowerCase() !== p.name.toLowerCase(); });
     S.saved.unshift({ name: p.name, avatar: p.avatar });
@@ -177,13 +193,25 @@
   var MODES = {
     classic: { name: 'Classic', time: 180, desc: '3 minutes' },
     blitz: { name: 'Blitz', time: 60, desc: '1 minute, go fast' },
+    survival: { name: 'Survival', time: 60, desc: 'Words add time to a shrinking clock' },
+    rarity: { name: 'Rarity', time: 180, desc: 'Rare letters like Q, Z and X score big' },
     zen: { name: 'Zen', time: 0, desc: 'No timer, finish when you like' },
-    daily: { name: 'Daily', time: 180, desc: 'One board a day, 3 minutes' }
+    party: { name: 'Party', time: 180, desc: '2 to 8 players' },
+    daily: { name: 'Daily Puzzle', time: 180, desc: 'One board a day' }
   };
+  var SURVIVAL_START = 60;
+  function survivalBonus(len) { return 1 + 2 * pts(len); }
   function boardKey(mode, n) { return mode === 'daily' ? 'daily:' + todayKey() : mode + ':' + n; }
   function addScore(mode, n, minLen, player, score, words) {
     if (mode === 'zen') return false;
     var key = boardKey(mode, n);
+    if (mode === 'daily') {
+      var all = S.boards['daily:best'] || [];
+      all.push({ name: player.name, avatar: player.avatar, score: score, words: words, minLen: minLen, at: Date.now(), day: todayKey() });
+      all.sort(function (a, b) { return b.score - a.score || a.at - b.at; });
+      S.boards['daily:best'] = all.slice(0, 20);
+    }
+
     var list = S.boards[key] || [];
     var prevBest = list.length ? list[0].score : -1;
     list.push({ name: player.name, avatar: player.avatar, score: score, words: words, minLen: minLen, at: Date.now() });
@@ -276,21 +304,22 @@
   // ---------- Home ----------
   function home() {
     if (!S.profile) return editMyProfile(home);
+    var today = S.daily[todayKey()];
     var scr = mount(
       '<header class="band" style="padding-bottom:24px">' +
       '<div class="band-row"><button class="player-chip" data-profile aria-label="Edit profile">' + avatar(S.profile.avatar, 40) + '<span>' + esc(S.profile.name) + '</span></button>' +
       '<button class="icon-btn" data-settings aria-label="Settings">' + I.gear + '</button></div>' +
       '<div style="display:flex;justify-content:center;padding:8px 0 4px">' + logo(true, true) + '</div></header>' +
       '<div class="scroll">' +
-      choice('solo', I.user, '#FFE2C7', '#C8530F', 'Play solo', 'Beat your best score') +
-      choice('pass', I.users, '#DCE8FF', '#1E4FA8', 'Pass and play', '2 to 6 players on one phone') +
-      choice('nearby', I.wifi, '#DDF0E8', '#2E7D1E', 'Play nearby', 'Phone to phone, no internet needed') +
+      choice('solo', I.user, '#FFE2C7', '#C8530F', 'Play solo', 'Classic, Blitz, Survival or Zen') +
+      choice('party', I.users, '#DCE8FF', '#1E4FA8', 'Party mode', '2 to 8 players, one phone or many') +
+      choice('daily', I.calendar, '#DDF0E8', '#2E7D1E', 'Daily Puzzle', today ? 'Played today: ' + plural(today.score, 'point', 'points') : 'Today’s board, your first try counts') +
       '<button class="btn btn-white" data-boards>' + I.trophy + 'Leaderboards</button>' +
       '</div>'
     );
     var el = scr.el;
     function choice(id, icon, bg, fg, title, sub) {
-      return '<button class="big-choice" data-go="' + id + '"><span class="ic" style="background:' + bg + ';color:' + fg + '">' + icon + '</span><span><b>' + title + '</b><small>' + sub + '</small></span></button>';
+      return '<button class="big-choice" data-go="' + id + '"><span class="ic" style="background:' + bg + ';color:' + fg + '">' + icon + '</span><span><b>' + title + '</b><small>' + esc(sub) + '</small></span></button>';
     }
     $('[data-profile]', el).onclick = function () { editMyProfile(home); };
     $('[data-settings]', el).onclick = function () { settings(home); };
@@ -298,39 +327,55 @@
     on(el, '[data-go]', 'click', function (e) {
       var go = e.currentTarget.getAttribute('data-go');
       if (go === 'solo') setup('solo');
-      else if (go === 'pass') setup('pass');
-      else nearby();
+      else if (go === 'party') party();
+      else startDaily();
     });
   }
 
+  function party() {
+    var scr = mount(backBand('Party mode') + '<div class="scroll">' +
+      '<p class="hint-text">Everyone plays the same board. Words only you found score double.</p>' +
+      '<button class="big-choice" data-pass><span class="ic" style="background:#FFE2C7;color:#C8530F">' + I.users + '</span><span><b>One phone</b><small>Pass and play, 2 to 8 players</small></span></button>' +
+      '<button class="big-choice" data-near><span class="ic" style="background:#DCE8FF;color:#1E4FA8">' + I.wifi + '</span><span><b>Phone to phone</b><small>Up to 8 phones, no internet needed</small></span></button>' +
+      '</div>');
+    on(scr.el, '[data-back]', 'click', home);
+    $('[data-pass]', scr.el).onclick = function () { setup('pass'); };
+    $('[data-near]', scr.el).onclick = nearby;
+  }
+
   // ---------- Game setup ----------
-  function setup(kind, preset) {
-    var cfg = Object.assign({ mode: S.last.mode, size: S.last.size, minLen: S.last.minLen }, preset || {});
-    if (kind === 'host' && cfg.mode === 'zen') cfg.mode = 'classic';
+  var MAX_PLAYERS = 8;
+  function setup(kind) {
+    var isParty = kind !== 'solo';
+    var cfg = { mode: isParty ? 'party' : (['classic', 'blitz', 'survival', 'rarity', 'zen'].indexOf(S.last.mode) >= 0 ? S.last.mode : 'classic'), size: S.last.size, minLen: S.last.minLen, partyTime: S.last.partyTime || 180, scoring: S.last.scoring || 'length' };
     var players = kind === 'pass' ? (setup.players || [S.profile]) : null;
     if (kind === 'pass') setup.players = players;
     var titles = { solo: 'Play solo', pass: 'Pass and play', host: 'Host a game' };
     var scr = mount(backBand(titles[kind]) + '<div class="scroll" data-body></div>');
     var el = scr.el;
-    on(el, '[data-back]', 'click', function () { kind === 'host' ? nearby() : home(); });
+    on(el, '[data-back]', 'click', function () { kind === 'host' ? nearby() : kind === 'pass' ? party() : home(); });
     function render() {
-      var modes = Object.keys(MODES).filter(function (m) { return !(kind === 'host' && m === 'zen'); });
-      var daily = cfg.mode === 'daily';
-      var html = '<span class="label">Mode</span><div class="modes">' +
-        modes.map(function (m) { return '<button class="mode" data-mode="' + m + '" aria-pressed="' + (cfg.mode === m) + '"><b>' + MODES[m].name + '</b><small>' + MODES[m].desc + '</small></button>'; }).join('') +
-        '</div>';
-      if (!daily) {
-        html += '<span class="label">Board size</span><div class="seg">' +
-          [4, 5, 6].map(function (n) { return '<button data-size="' + n + '" aria-pressed="' + (cfg.size === n) + '">' + n + ' × ' + n + '</button>'; }).join('') + '</div>' +
-          '<span class="label">Shortest word</span><div class="seg">' +
-          [3, 4].map(function (n) { return '<button data-min="' + n + '" aria-pressed="' + (cfg.minLen === n) + '">' + n + ' letters</button>'; }).join('') + '</div>';
+      var html = '';
+      if (!isParty) {
+        html += '<span class="label">Mode</span><div class="modes">' +
+          ['classic', 'blitz', 'survival', 'rarity', 'zen'].map(function (m) { return '<button class="mode" data-mode="' + m + '" aria-pressed="' + (cfg.mode === m) + '"><b>' + MODES[m].name + '</b><small>' + MODES[m].desc + '</small></button>'; }).join('') + '</div>';
+        if (cfg.mode === 'rarity') html += '<p class="hint-text">3 minutes. Each letter has a value: common ones like E, A and S are 1 point, rarer ones more, up to 10 for Q and Z. A word scores the total of its letters.</p>';
+        if (cfg.mode === 'survival') html += '<p class="hint-text">Start with 1 minute. Every word adds time: 3 letters +3s, 4 letters +5s, 5 letters +7s, and more for longer words. The clock speeds up as you go.</p>';
       } else {
-        html += '<p class="hint-text">Today’s board is the same for everyone playing Word Mix: 4 × 4, 3-letter words and up.</p>';
+        html += '<span class="label">Round length</span><div class="seg">' +
+          [[60, '1 min'], [120, '2 min'], [180, '3 min']].map(function (t) { return '<button data-ptime="' + t[0] + '" aria-pressed="' + (cfg.partyTime === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>' +
+          '<span class="label">Scoring</span><div class="seg">' +
+          '<button data-scoring="length" aria-pressed="' + (cfg.scoring !== 'rarity') + '">By length</button><button data-scoring="rarity" aria-pressed="' + (cfg.scoring === 'rarity') + '">By rarity</button></div>' +
+          '<p class="hint-text">' + (cfg.scoring === 'rarity' ? 'Words score the value of their letters: E, A, S are 1 point, Q and Z are 10.' : '3 letters 1 point, 4 letters 2, 5 letters 3, then 1 more per extra letter.') + ' Words only you found score double.</p>';
       }
+      html += '<span class="label">Board size</span><div class="seg">' +
+        [4, 5, 6].map(function (n) { return '<button data-size="' + n + '" aria-pressed="' + (cfg.size === n) + '">' + n + ' × ' + n + '</button>'; }).join('') + '</div>' +
+        '<span class="label">Shortest word</span><div class="seg">' +
+        [3, 4].map(function (n) { return '<button data-min="' + n + '" aria-pressed="' + (cfg.minLen === n) + '">' + n + ' letters</button>'; }).join('') + '</div>';
       if (kind === 'pass') {
-        html += '<span class="label">Players (' + players.length + ' of 6)</span><div class="players">' +
+        html += '<span class="label">Players (' + players.length + ' of ' + MAX_PLAYERS + ')</span><div class="players">' +
           players.map(function (p, i) { return '<div class="prow">' + avatar(p.avatar, 44) + '<b>' + esc(p.name) + '</b>' + (players.length > 1 ? '<button class="x" data-rm="' + i + '" aria-label="Remove ' + esc(p.name) + '">' + I.close + '</button>' : '') + '</div>'; }).join('') +
-          '</div>' + (players.length < 6 ? '<button class="btn btn-white" data-add>' + I.plus + 'Add player</button>' : '');
+          '</div>' + (players.length < MAX_PLAYERS ? '<button class="btn btn-white" data-add>' + I.plus + 'Add player</button>' : '');
       }
       var ready = kind !== 'pass' || players.length >= 2;
       html += '<button class="btn btn-orange" data-start ' + (ready ? '' : 'disabled') + ' style="margin-top:6px">' + (kind === 'host' ? 'Next: invite players' : 'Start') + '</button>';
@@ -338,12 +383,14 @@
       var body = $('[data-body]', el);
       body.innerHTML = html;
       on(body, '[data-mode]', 'click', function (e) { cfg.mode = e.currentTarget.getAttribute('data-mode'); render(); });
+      on(body, '[data-ptime]', 'click', function (e) { cfg.partyTime = +e.currentTarget.getAttribute('data-ptime'); render(); });
+      on(body, '[data-scoring]', 'click', function (e) { cfg.scoring = e.currentTarget.getAttribute('data-scoring'); render(); });
       on(body, '[data-size]', 'click', function (e) { cfg.size = +e.currentTarget.getAttribute('data-size'); render(); });
       on(body, '[data-min]', 'click', function (e) { cfg.minLen = +e.currentTarget.getAttribute('data-min'); render(); });
       on(body, '[data-rm]', 'click', function (e) { players.splice(+e.currentTarget.getAttribute('data-rm'), 1); render(); });
       on(body, '[data-add]', 'click', function () { addPlayerSheet(players, render); });
       $('[data-start]', body).onclick = function () {
-        S.last = { mode: cfg.mode, size: cfg.size, minLen: cfg.minLen }; save();
+        S.last = { mode: isParty ? S.last.mode : cfg.mode, size: cfg.size, minLen: cfg.minLen, partyTime: cfg.partyTime, scoring: cfg.scoring }; save();
         var c = finalCfg(cfg);
         if (kind === 'solo') playSolo(c);
         else if (kind === 'pass') { setup.players = players; playPass(c, players); }
@@ -353,8 +400,21 @@
     render();
   }
   function finalCfg(cfg) {
-    var daily = cfg.mode === 'daily';
-    return { mode: cfg.mode, n: daily ? 4 : cfg.size, minLen: daily ? 3 : cfg.minLen, time: MODES[cfg.mode].time, seed: daily ? hashStr('wordmix-' + todayKey()) : null };
+    if (cfg.mode === 'daily') return { mode: 'daily', n: 4, minLen: 3, time: 180, seed: hashStr('wordmix-' + todayKey()), scoring: 'length' };
+    return {
+      mode: cfg.mode, n: cfg.size, minLen: cfg.minLen, seed: null,
+      scoring: cfg.mode === 'rarity' ? 'rarity' : cfg.mode === 'party' ? (cfg.scoring || 'length') : 'length',
+      time: cfg.mode === 'party' ? (cfg.partyTime || 180) : MODES[cfg.mode].time,
+      survival: cfg.mode === 'survival'
+    };
+  }
+  function startDaily() {
+    var cfg = finalCfg({ mode: 'daily' });
+    var done = S.daily[todayKey()];
+    if (!done) return playSolo(cfg);
+    confirmBox('You scored ' + plural(done.score, 'point', 'points') + ' on today’s puzzle. Play again for practice? It won’t count.', 'Practice', 'Not now').then(function (y) {
+      if (y) { cfg.practice = true; playSolo(cfg); }
+    });
   }
   function addPlayerSheet(players, done) {
     var names = players.map(function (p) { return p.name.toLowerCase(); });
@@ -374,7 +434,7 @@
         title: 'New player', button: 'Add player', onBack: back,
         onSave: function (p) {
           if (players.some(function (x) { return x.name.toLowerCase() === p.name.toLowerCase(); })) { toast('That name is already playing'); return; }
-          rememberPlayer(p); players.push(p); setup.players = players; setup('pass');
+          if (players.length >= MAX_PLAYERS) return setup('pass'); rememberPlayer(p); players.push(p); setup.players = players; setup('pass');
         }
       });
     };
@@ -406,13 +466,13 @@
       '<header class="band game-band"><div class="band-row">' +
       '<div style="display:flex;align-items:center;gap:10px;min-width:0">' + avatar(opts.player.avatar, 40) + '<b style="color:#FFF;font-size:18px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(opts.label || opts.player.name) + '</b></div>' +
       '<div style="display:flex;gap:8px">' + (timed ? '' : '<button class="band-btn" data-finish>Finish</button>') +
-      '<button class="icon-btn" data-menu aria-label="Pause">' + I.menu + '</button></div></div>' +
+      '<button class="icon-btn" data-menu aria-label="Game menu">' + I.menu + '</button></div></div>' +
       '<div style="display:flex;gap:10px">' +
       (timed ? '<div class="stat"><span class="clock" data-clock>0:00</span><div class="bar"><i data-bar></i></div></div>' : '<div class="stat"><span class="clock">Zen</span><span style="font-weight:700;color:var(--muted);font-size:14px">No timer</span></div>') +
       '<div class="count" data-count><b>0</b><small>words</small></div></div></header>' +
       '<div class="wordbar"><div class="w placeholder" data-word>Swipe to start</div><div class="m" data-msg aria-live="polite">Lift your finger to submit</div></div>' +
-      '<div class="board-wrap" data-wrap><div class="board-panel"><div class="board" data-board style="--n:' + n + '"></div></div></div>' +
-      '<div class="game-foot" data-foot></div>'
+      '<div class="board-wrap" data-wrap><div class="hint-row" data-foot></div><div class="board-panel"><div class="board" data-board style="--n:' + n + '"></div></div></div>' +
+      '<div class="game-foot"></div>'
     );
     var el = scr.el;
     var boardEl = $('[data-board]', el), wordEl = $('[data-word]', el), msgEl = $('[data-msg]', el), foot = $('[data-foot]', el);
@@ -435,7 +495,7 @@
     var geo = { side: 0, gap: 0, tile: 0, pitch: 0 };
     function layout() {
       var wrap = $('[data-wrap]', el);
-      var w = wrap.clientWidth - 32, h = wrap.clientHeight - 24;
+      var w = wrap.clientWidth - 32, h = wrap.clientHeight - 8 - 66;
       var side = Math.max(200, Math.min(w, h, 520)) - 16;
       var gap = Math.round(side * (n === 4 ? 0.03 : 0.022));
       var tile = (side - gap * (n - 1)) / n;
@@ -503,6 +563,7 @@
       if (foundSet.has(w)) { setMsg('Already found', 'bad', W); Snd.bad(); buzz(30); return; }
       foundSet.add(w); found.push(w);
       setMsg(['Nice!', 'Got it!', 'Good one!', 'Yes!', 'Lovely!'][found.length % 5], 'good', W);
+      if (cfg.survival) addTime(survivalBonus(w.length));
       Snd.good(w.length); buzz(15);
       var cnt = $('[data-count]', el); $('b', cnt).textContent = found.length;
       cnt.classList.remove('pop'); void cnt.offsetWidth; cnt.classList.add('pop');
@@ -541,7 +602,8 @@
     el.addEventListener('pointerdown', function (e) { if (!e.target.closest('[data-hint]')) touched(); }, true);
     function showHintBtn() {
       hintBtnUntil = Date.now() + 3000;
-      foot.innerHTML = '<button class="hint-btn" data-hint>' + I.bulb + 'Hint</button>';
+      foot.innerHTML = '<button class="hint-btn" data-hint aria-label="Show a hint">' + I.bulb + '<span>Hint</span></button>';
+      Snd.tone(1318, 0.08, 'sine', 0.035);
       $('[data-hint]', foot).onclick = useHint;
     }
     function hideHintBtn() {
@@ -567,11 +629,19 @@
       hintPath = null; hintGlowUntil = 0;
     }
 
-    // Timer and pause. The clock starts once the 3-2-1 countdown is over.
-    var started = false, paused = false, remaining = cfg.time * 1000, endAt = Date.now() + remaining;
+    // Timer and menu. The clock starts once the 3-2-1 countdown is over.
+    // `left` counts down by real time; Survival drains faster the longer you last.
+    var started = false, paused = false, left = cfg.time * 1000, maxLeft = cfg.time * 1000, lastNow = 0, elapsed = 0;
     function start() {
       if (started || ended) return;
-      started = true; endAt = Date.now() + cfg.time * 1000; lastTouch = Date.now(); armed = true;
+      started = true; lastNow = Date.now(); lastTouch = Date.now(); armed = true;
+    }
+    function addTime(secs) {
+      left += secs * 1000; maxLeft = Math.max(maxLeft, left);
+      var st = $('.stat', el);
+      var tag = document.createElement('span');
+      tag.className = 'plus-time'; tag.textContent = '+' + secs + 's';
+      st.appendChild(tag); setTimeout(function () { tag.remove(); }, 1500);
     }
     var clockEl = $('[data-clock]', el), barEl = $('[data-bar]', el);
     function fmt(ms) { var s = Math.ceil(ms / 1000), m = Math.floor(s / 60); s %= 60; return m + ':' + (s < 10 ? '0' : '') + s; }
@@ -580,12 +650,16 @@
       if (ended) return;
       var now = Date.now();
       if (!started) { if (timed) { clockEl.textContent = fmt(cfg.time * 1000); barEl.style.transform = 'scaleX(1)'; } return; }
+      var dt = now - lastNow; lastNow = now;
       if (timed && !paused) {
-        var left = Math.max(0, endAt - now);
+        elapsed += dt;
+        var speed = cfg.survival ? Math.min(2.5, 1 + elapsed / 120000) : 1;
+        left = Math.max(0, left - dt * speed);
         clockEl.textContent = fmt(left);
-        barEl.style.transform = 'scaleX(' + (left / (cfg.time * 1000)) + ')';
+        barEl.style.transform = 'scaleX(' + (left / maxLeft) + ')';
         var secs = Math.ceil(left / 1000);
         if (secs <= 5 && secs > 0 && secs !== lastBeep) { lastBeep = secs; Snd.tone(1200, 0.06, 'triangle', 0.04); }
+        if (secs > 5) lastBeep = -1;
         if (left <= 0) { finish(); return; }
       }
       if (hintGlowUntil && now >= hintGlowUntil) clearHintGlow();
@@ -597,20 +671,33 @@
     tick();
     function pause() {
       if (paused || ended) return;
-      paused = true; remaining = endAt - Date.now();
+      if (!opts.multiplayer) paused = true;
       if (dragging) { dragging = false; path = []; paint(); }
+      if (hintBtnUntil) hideHintBtn();
       var o = document.createElement('div');
       o.className = 'overlay center';
-      o.innerHTML = '<div class="dialog" role="dialog" aria-modal="true"><h2 class="title">' + (opts.multiplayer ? 'Game menu' : 'Paused') + '</h2>' +
-        (opts.multiplayer ? '<p class="hint-text">The clock keeps running in a nearby game.</p>' : '') +
-        '<button class="btn btn-orange" data-resume>Resume</button><button class="btn btn-white" data-quit>' + (opts.multiplayer ? 'Leave game' : 'Quit to home') + '</button></div>';
       el.appendChild(o);
-      $('[data-resume]', o).onclick = function () { o.remove(); resume(); };
-      $('[data-quit]', o).onclick = function () { o.remove(); ended = true; stop(); opts.onQuit ? opts.onQuit() : home(); };
+      function main() {
+        o.innerHTML = '<div class="dialog" role="dialog" aria-modal="true"><h2 class="title">' + (opts.multiplayer ? 'Game menu' : 'Paused') + '</h2>' +
+          (opts.multiplayer ? '<p class="hint-text">The clock keeps running in a phone-to-phone game.</p>' : '') +
+          '<button class="btn btn-orange" data-resume>Resume</button>' +
+          '<button class="btn btn-white" data-hints>' + I.bulb + 'Hint settings</button>' +
+          '<button class="btn btn-white" data-quit>' + (opts.multiplayer ? 'Leave game' : 'Quit to home') + '</button></div>';
+        $('[data-resume]', o).onclick = function () { o.remove(); resume(); };
+        $('[data-hints]', o).onclick = hintMenu;
+        $('[data-quit]', o).onclick = function () { o.remove(); ended = true; stop(); opts.onQuit ? opts.onQuit() : home(); };
+      }
+      function hintMenu() {
+        o.innerHTML = '<div class="dialog" role="dialog" aria-modal="true" style="text-align:left"><h2 class="title">Hint settings</h2>' +
+          '<p class="hint-text">The lightbulb pops up above the grid when you haven’t made a move for this long. It stays for 3 seconds.</p>' +
+          hintControls() + '<button class="btn btn-orange" data-back2>Done</button></div>';
+        bindHintControls(o, hintMenu);
+        $('[data-back2]', o).onclick = main;
+      }
+      main();
     }
     function resume() {
-      if (!opts.multiplayer) endAt = Date.now() + remaining;
-      paused = false; lastTouch = Date.now(); armed = true;
+      paused = false; lastNow = Date.now(); lastTouch = Date.now(); armed = true;
     }
     $('[data-menu]', el).onclick = pause;
     var fin = $('[data-finish]', el);
@@ -628,7 +715,7 @@
       setMsg(timed ? 'Time’s up!' : 'Round over', 'good');
       Snd.tone(523, 0.3, 'sine', 0.07); Snd.tone(392, 0.4, 'sine', 0.07, 0.25);
       buzz(60);
-      setTimeout(function () { opts.onEnd({ words: found.slice(), hints: hintsUsed }); }, 1100);
+      setTimeout(function () { opts.onEnd({ words: found.slice(), hints: hintsUsed, lasted: elapsed }); }, 1100);
     }
     scr.cleanup = function () { ended = true; stop(); };
     boardEl.addEventListener('pointerdown', function (e) { if (!started) e.stopImmediatePropagation(); }, true);
@@ -637,22 +724,38 @@
     return api;
   }
 
-  function scoreWords(words, sharedSet) {
-    return words.map(function (w) { var shared = sharedSet && sharedSet.has(w); return { w: w, p: shared ? 0 : pts(w.length), shared: shared }; });
+  // In Party mode a word nobody else found scores double.
+  function scoreWords(words, uniqueSet, scoring) {
+    return words.map(function (w) {
+      var base = scoreOf(w, scoring);
+      if (!uniqueSet) return { w: w, p: base };
+      var u = uniqueSet.has(w);
+      return { w: w, p: u ? base * 2 : base, unique: u, shared: !u };
+    });
   }
   // ---------- Solo ----------
   function playSolo(cfg) {
     var board = makeBoard(cfg.n, cfg.minLen, cfg.seed);
-    var game = playBoard({
+    playBoard({
       board: board, cfg: cfg, player: S.profile,
       onEnd: function (res) {
-        var list = scoreWords(res.words).sort(function (a, b) { return b.p - a.p || b.w.length - a.w.length; });
+        var list = scoreWords(res.words, null, cfg.scoring).sort(function (a, b) { return b.p - a.p || b.w.length - a.w.length; });
         var total = list.reduce(function (a, x) { return a + x.p; }, 0);
-        var best = addScore(cfg.mode, cfg.n, cfg.minLen, S.profile, total, list.length);
-        resultsSolo(cfg, list, total, res.hints, best);
+        var best = false, rank = null;
+        if (cfg.mode === 'daily') {
+          if (!cfg.practice) {
+            S.daily[todayKey()] = { score: total, words: list.length };
+            best = addScore('daily', 4, 3, S.profile, total, list.length);
+            var today = S.boards['daily:' + todayKey()] || [];
+            var all = S.boards['daily:best'] || [];
+            rank = { today: 1 + today.filter(function (r) { return r.score > total; }).length, todayN: today.length,
+              ever: 1 + all.filter(function (r) { return r.score > total; }).length, everN: all.length };
+            save();
+          }
+        } else best = addScore(cfg.mode, cfg.n, cfg.minLen, S.profile, total, list.length);
+        resultsSolo(cfg, list, total, res, best, rank);
       }
     });
-
   }
   function tallyUp(el, total) {
     var t = 0, step = Math.max(1, Math.ceil(total / 40));
@@ -666,34 +769,47 @@
   function wordRows(list, baseDelay) {
     if (!list.length) return '<p class="empty">No words this round.</p>';
     return list.map(function (x, i) {
-      return '<div class="wrow' + (x.shared ? ' shared' : '') + '" style="animation-delay:' + ((baseDelay || 0) + i * 0.15) + 's"><b>' + esc(x.w.toUpperCase()) + '</b><span class="pts">' + (x.shared ? 'shared, 0' : x.p + (x.p === 1 ? ' pt' : ' pts')) + '</span></div>';
+      var tag = x.unique ? '<span class="tag">Only you ×2</span>' : x.shared ? '<span class="tag">Shared</span>' : '';
+      return '<div class="wrow' + (x.unique ? ' unique' : '') + '" style="animation-delay:' + ((baseDelay || 0) + i * 0.15) + 's"><b>' + esc(x.w.toUpperCase()) + '</b>' + tag + '<span class="pts">' + x.p + (x.p === 1 ? ' pt' : ' pts') + '</span></div>';
     }).join('');
   }
-  function resultsSolo(cfg, list, total, hints, best) {
+  function fmtTime(ms) { var s = Math.round(ms / 1000), m = Math.floor(s / 60); s %= 60; return m + ':' + (s < 10 ? '0' : '') + s; }
+  function resultsSolo(cfg, list, total, res, best, rank) {
+    var hints = res.hints;
+    var eyebrow = cfg.survival ? 'Out of time' : cfg.time ? 'Time’s up' : 'Round over';
+    var sub = plural(list.length, 'word', 'words') + (cfg.survival ? ' · lasted ' + fmtTime(res.lasted || 0) : '') + (hints ? ' · ' + plural(hints, 'hint', 'hints') + ' used' : '');
+    var badge = '';
+    if (cfg.mode === 'daily') badge = cfg.practice ? '<div class="badge">Practice round, not ranked</div>' : rank ? '<div class="badge">Today: #' + rank.today + ' of ' + rank.todayN + ' · All-time daily: #' + rank.ever + '</div>' : '';
+    else if (best) badge = '<div class="badge">New best score!</div>';
     var scr = mount(
       '<header class="band" style="padding-top:calc(26px + env(safe-area-inset-top));padding-bottom:22px;gap:6px">' +
-      '<div class="eyebrow">' + (cfg.time ? 'Time’s up' : 'Round over') + ' · ' + MODES[cfg.mode].name + '</div>' +
+      '<div class="eyebrow">' + eyebrow + ' · ' + MODES[cfg.mode].name + '</div>' +
       '<div class="total" data-total>0</div>' +
-      '<div class="sub">' + plural(list.length, 'word', 'words') + (hints ? ' · ' + plural(hints, 'hint', 'hints') + ' used' : '') + '</div>' +
-      (best ? '<div class="badge">New best score!</div>' : '') + '</header>' +
+      '<div class="sub">' + sub + '</div>' + badge + '</header>' +
       '<div class="scroll"><span class="label">Your words</span>' + wordRows(list, 0.5) +
-      '<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px"><button class="btn btn-blue" data-again>' + I.play + 'Play again</button>' +
+      '<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">' +
+      (cfg.mode === 'daily' ? '<button class="btn btn-blue" data-boards>' + I.trophy + 'Daily leaderboard</button>' : '<button class="btn btn-blue" data-again>' + I.play + 'Play again</button>') +
       '<button class="btn btn-white" data-home>Home</button></div></div>'
     );
     setTimeout(function () { tallyUp($('[data-total]', scr.el), total); }, 450);
     if (best) setTimeout(function () { Snd.cheer(); }, 900);
-    $('[data-again]', scr.el).onclick = function () { playSolo(finalCfg({ mode: cfg.mode, size: cfg.n, minLen: cfg.minLen })); };
+    var ag = $('[data-again]', scr.el);
+    if (ag) ag.onclick = function () { playSolo(finalCfg({ mode: cfg.mode, size: cfg.n, minLen: cfg.minLen })); };
+    var lb = $('[data-boards]', scr.el);
+    if (lb) lb.onclick = function () { leaderboards(home, 'daily'); };
     $('[data-home]', scr.el).onclick = home;
   }
 
   // ---------- Pass and play ----------
-  function playPass(cfg, players) {
+  function playPass(cfg, players, session) {
+    session = session || { round: 0, totals: {} };
     var board = makeBoard(cfg.n, cfg.minLen, cfg.seed);
     var results = [];
     function turn(i) {
-      if (i >= players.length) return resultsMulti(cfg, players.map(function (p, k) { return { name: p.name, avatar: p.avatar, words: results[k].words, hints: results[k].hints }; }), {
-        again: function () { playPass(finalCfg({ mode: cfg.mode, size: cfg.n, minLen: cfg.minLen }), players); },
-        save: true
+      if (i >= players.length) return resultsMulti(cfg, players.map(function (p, k) { return { key: p.name.toLowerCase(), name: p.name, avatar: p.avatar, words: results[k].words, hints: results[k].hints }; }), {
+        board: board, session: session, save: true,
+        again: function () { playPass(cfg, players, session); },
+        againLabel: 'Next round'
       });
       var p = players[i];
       var scr = mount(
@@ -702,7 +818,7 @@
         '<h2 class="title" style="color:#FFF;font-size:30px">Pass to ' + esc(p.name) + '</h2>' +
         '<p>' + (i === 0 ? 'Everyone plays the same board, one at a time.' : 'No peeking at the last player’s board!') + '</p>' +
         '<button class="btn btn-white" data-ready style="min-width:220px">I’m ' + esc(p.name) + ', start</button>' +
-        '<button class="btn btn-ghost" data-quit style="color:#3A1A05">Quit</button></div>'
+        '<button class="btn btn-ghost" data-quit style="color:var(--band-ink)">Quit</button></div>'
       );
       $('[data-ready]', scr.el).onclick = function () {
         var g = playBoard({
@@ -716,76 +832,158 @@
     turn(0);
   }
 
-  // players: [{name, avatar, words:[...], hints?, id?}]
-  function resultsMulti(cfg, players, opts) {
-    var counts = {};
-    players.forEach(function (p) { p.words.forEach(function (w) { counts[w] = (counts[w] || 0) + 1; }); });
-    var shared = new Set(Object.keys(counts).filter(function (w) { return counts[w] > 1; }));
+  // ---------- Party results ----------
+  // players: [{key, name, avatar, words:[...], me?}]
+  function computeRound(players, scoring) {
+    var counts = {}, finders = {};
+    players.forEach(function (p) {
+      p.words.forEach(function (w) { counts[w] = (counts[w] || 0) + 1; (finders[w] = finders[w] || []).push(p); });
+    });
+    var unique = new Set(Object.keys(counts).filter(function (w) { return counts[w] === 1; }));
     var rows = players.map(function (p) {
-      var list = scoreWords(p.words, shared).sort(function (a, b) { return (a.shared - b.shared) || b.p - a.p || b.w.length - a.w.length; });
-      return { p: p, list: list, score: list.reduce(function (a, x) { return a + x.p; }, 0) };
+      var list = scoreWords(p.words, unique, scoring).sort(function (a, b) { return b.p - a.p || b.w.length - a.w.length; });
+      var longest = p.words.slice().sort(function (a, b) { return b.length - a.length || scoreOf(b, scoring) - scoreOf(a, scoring); })[0] || '';
+      return { p: p, list: list, score: list.reduce(function (a, x) { return a + x.p; }, 0), longest: longest, uniques: list.filter(function (x) { return x.unique; }).length };
     }).sort(function (a, b) { return b.score - a.score; });
-    if (opts.save) rows.forEach(function (r) { addScore(cfg.mode, cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
-    if (opts.saveMine) rows.forEach(function (r) { if (r.p.me) addScore(cfg.mode, cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
+    return { rows: rows, counts: counts, finders: finders, unique: unique };
+  }
+  function updateSession(session, rows) {
+    session.round = (session.round || 0) + 1;
+    var top = rows.length ? rows[0].score : 0;
+    rows.forEach(function (r) {
+      var k = r.p.key || r.p.id || r.p.name;
+      var t = session.totals[k] || { total: 0, wins: 0 };
+      t.name = r.p.name; t.avatar = r.p.avatar; t.total += r.score;
+      if (r.score === top && top > 0) t.wins++;
+      session.totals[k] = t;
+    });
+    return standings(session);
+  }
+  function standings(session) {
+    return Object.keys(session.totals).map(function (k) { return Object.assign({ key: k }, session.totals[k]); }).sort(function (a, b) { return b.total - a.total; });
+  }
+  function resultsMulti(cfg, players, opts) {
+    var scoring = cfg.scoring || 'length';
+    var R = computeRound(players, scoring), rows = R.rows;
+    if (opts.save) rows.forEach(function (r) { addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
+    if (opts.saveMine) rows.forEach(function (r) { if (r.p.me) addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
+    var table = opts.session ? updateSession(opts.session, rows) : (opts.totals || []);
+    var round = opts.session ? opts.session.round : (opts.round || 1);
+    function totalFor(p) { var k = p.key || p.id || p.name; var t = table.filter(function (x) { return x.key === k; })[0]; return t ? t.total : null; }
     var top = rows[0].score, winners = rows.filter(function (r) { return r.score === top; });
     var title = winners.length > 1 ? 'It’s a tie!' : esc(winners[0].p.name) + ' wins!';
-    var selected = 0;
-    rows.forEach(function (r, i) { if (r.p.me) selected = i; });
-    var scr = mount(
+    // Awards
+    var longLen = Math.max.apply(null, rows.map(function (r) { return r.longest.length; }));
+    var maxUnique = Math.max.apply(null, rows.map(function (r) { return r.uniques; }));
+    function chips(r) {
+      var c = '';
+      if (longLen >= 3 && r.longest.length === longLen) c += '<span class="award">Longest word</span>';
+      if (maxUnique > 0 && r.uniques === maxUnique) c += '<span class="award blue">Most unique</span>';
+      return c;
+    }
+    // Every word submitted, best first
+    var allWords = Object.keys(R.counts).map(function (w) {
+      var base = scoreOf(w, scoring), u = R.unique.has(w);
+      return { w: w, base: base, unique: u, p: u ? base * 2 : base, who: R.finders[w] };
+    }).sort(function (a, b) { return b.p - a.p || b.w.length - a.w.length || (a.w < b.w ? -1 : 1); });
+    // Unfound gems and longest word on the board
+    var gems = [], longestOnBoard = '';
+    if (opts.board && opts.board.words) {
+      var boardWords = Array.from(opts.board.words.keys());
+      gems = boardWords.filter(function (w) { return !R.counts[w]; }).sort(function (a, b) { return scoreOf(b, scoring) - scoreOf(a, scoring) || b.length - a.length; }).slice(0, 3);
+      longestOnBoard = boardWords.sort(function (a, b) { return b.length - a.length || scoreOf(b, scoring) - scoreOf(a, scoring); })[0] || '';
+    }
+    var html =
       '<header class="band" style="padding-top:calc(24px + env(safe-area-inset-top));padding-bottom:22px;gap:6px;align-items:center">' +
-      '<div class="eyebrow">Results · ' + MODES[cfg.mode].name + '</div>' +
+      '<div class="eyebrow">Round ' + round + ' results · ' + (scoring === 'rarity' ? 'Rarity scoring' : 'Party') + '</div>' +
       '<div style="animation:dialogIn .7s .2s cubic-bezier(.3,1.4,.5,1) both">' + avatar(winners[0].p.avatar, 84) + '</div>' +
       '<div class="total" style="font-size:40px">' + title + '</div>' +
-      '<div class="sub">Shared words score nothing</div></header>' +
-      '<div class="scroll"><div class="players" data-ranks>' +
+      '<div class="sub">Words only you found score double</div></header>' +
+      '<div class="scroll">' +
+      '<span class="label">Round leaderboard</span><div class="players">' +
       rows.map(function (r, i) {
-        return '<button class="rank' + (r.score === top ? ' first' : '') + '" data-sel="' + i + '" aria-pressed="' + (i === selected) + '" style="animation-delay:' + (0.3 + i * 0.18) + 's"><span class="pos">' + (i + 1) + '</span>' + avatar(r.p.avatar, 44) +
-          '<span class="nm"><b>' + esc(r.p.name) + '</b><small>' + plural(r.list.length, 'word', 'words') + ' · tap to see</small></span><span class="sc" data-sc="' + i + '">0</span></button>';
-      }).join('') + '</div>' +
-      '<span class="label" data-wl></span><div class="players" data-words></div>' +
-      '<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">' +
+        var tot = totalFor(r.p);
+        return '<div class="rank' + (r.score === top ? ' first' : '') + '" style="animation-delay:' + (0.3 + i * 0.18) + 's"><span class="pos">' + (i + 1) + '</span>' + avatar(r.p.avatar, 44) +
+          '<span class="nm"><b>' + esc(r.p.name) + (r.p.me ? ' (you)' : '') + '</b><small>' + plural(r.list.length, 'word', 'words') + ' · ' + r.uniques + ' unique' + (r.longest ? ' · longest ' + esc(r.longest.toUpperCase()) : '') + '</small>' +
+          '<span class="awards">' + chips(r) + '</span></span>' +
+          '<span class="scs"><span class="sc" data-sc="' + i + '">0</span>' + (tot !== null ? '<small>Total ' + tot + '</small>' : '') + '</span></div>';
+      }).join('') + '</div>';
+    if (table.length) {
+      html += '<span class="label">Overall standings · after ' + plural(round, 'round', 'rounds') + '</span><div class="card standings">' +
+        table.map(function (t, i) {
+          return '<div class="st-row' + (i === 0 && t.total > 0 ? ' lead' : '') + '"><span class="pos">' + (i + 1) + '</span>' + avatar(t.avatar, 32) + '<b>' + esc(t.name) + '</b><small>' + plural(t.wins, 'win', 'wins') + '</small><span class="sc">' + t.total + '</span></div>';
+        }).join('') + '</div>';
+    }
+    html += '<span class="label">Every word this round</span>' +
+      (allWords.length ? '<div class="players">' + allWords.map(function (x, i) {
+        return '<div class="wrow' + (x.unique ? ' unique' : ' shared') + '" style="animation-delay:' + (0.6 + Math.min(i, 20) * 0.08) + 's">' +
+          '<span class="ww"><b>' + esc(x.w.toUpperCase()) + '</b><span class="who">' + x.who.map(function (p) { return avatar(p.avatar, 22); }).join('') +
+          '<small>' + esc(x.who.map(function (p) { return p.name; }).join(', ')) + '</small></span></span>' +
+          '<span class="tag">' + (x.unique ? 'Unique ×2' : 'Shared') + '</span>' +
+          '<span class="pts">' + (x.unique ? x.base + ' × 2 = ' + x.p : '+' + x.p) + '</span></div>';
+      }).join('') + '</div>' : '<p class="empty">Nobody found a word this round.</p>');
+    if (gems.length || longestOnBoard) {
+      html += '<span class="label">Unfound gems</span><div class="card gems">' +
+        (longestOnBoard ? '<div class="gem-long"><small>Longest word on the board</small><b>' + esc(longestOnBoard.toUpperCase()) + '</b><span>' + longestOnBoard.length + ' letters · ' + plural(scoreOf(longestOnBoard, scoring), 'point', 'points') +
+          (R.counts[longestOnBoard] ? ' · found by ' + esc(R.finders[longestOnBoard].map(function (p) { return p.name; }).join(', ')) : ' · nobody found it') + '</span></div>' : '') +
+        gems.map(function (w) { return '<div class="gem"><b>' + esc(w.toUpperCase()) + '</b><span class="pts">' + plural(scoreOf(w, scoring), 'pt', 'pts') + '</span></div>'; }).join('') + '</div>';
+    }
+    html += '<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">' +
       (opts.again ? '<button class="btn btn-blue" data-again>' + I.play + (opts.againLabel || 'Play again') + '</button>' : '') +
       (opts.note ? '<p class="hint-text" style="text-align:center">' + esc(opts.note) + '</p>' : '') +
-      '<button class="btn btn-white" data-home>' + (opts.homeLabel || 'Home') + '</button></div></div>'
-    );
+      '<button class="btn btn-white" data-home>' + (opts.homeLabel || 'Home') + '</button></div></div>';
+    var scr = mount(html);
     var el = scr.el;
-    function showWords(i) {
-      selected = i;
-      $$('[data-sel]', el).forEach(function (b) { b.setAttribute('aria-pressed', String(+b.getAttribute('data-sel') === i)); });
-      $('[data-wl]', el).textContent = rows[i].p.name + '’s words';
-      $('[data-words]', el).innerHTML = wordRows(rows[i].list, 0);
-    }
-    on(el, '[data-sel]', 'click', function (e) { showWords(+e.currentTarget.getAttribute('data-sel')); });
-    showWords(selected);
     rows.forEach(function (r, i) { setTimeout(function () { tallyUp($('[data-sc="' + i + '"]', el), r.score); }, 600 + i * 250); });
     setTimeout(function () { Snd.cheer(); }, 900);
     if (opts.again) $('[data-again]', el).onclick = opts.again;
     $('[data-home]', el).onclick = opts.home || home;
-    return scr;
+    return { scr: scr, table: table, round: round };
   }
 
   // ---------- Leaderboards ----------
-  function leaderboards(back) {
-    var tab = 'classic', size = 4;
+  function leaderboards(back, startTab) {
+    var tab = startTab || 'classic', size = 4;
     var scr = mount(backBand('Leaderboards') + '<div class="scroll" data-body></div>');
     on(scr.el, '[data-back]', 'click', back);
-    function render() {
-      var key = tab === 'daily' ? 'daily:' + todayKey() : tab + ':' + size;
-      var list = S.boards[key] || [];
-      var html = '<div class="seg">' + ['classic', 'blitz', 'daily'].map(function (m) { return '<button data-tab="' + m + '" aria-pressed="' + (tab === m) + '">' + MODES[m].name + '</button>'; }).join('') + '</div>';
-      if (tab !== 'daily') html += '<div class="seg">' + [4, 5, 6].map(function (n) { return '<button data-size="' + n + '" aria-pressed="' + (size === n) + '">' + n + ' × ' + n + '</button>'; }).join('') + '</div>';
-      else html += '<p class="hint-text">Today’s daily board scores on this phone.</p>';
-      html += list.length ? list.slice(0, 10).map(function (r, i) {
+    function rowsHtml(list, showDay) {
+      return list.length ? list.slice(0, 10).map(function (r, i) {
         var d = new Date(r.at);
         return '<div class="lb-row" style="animation-delay:' + (i * 0.07) + 's"><span class="pos">' + (i + 1) + '</span>' + avatar(r.avatar, 42) +
           '<span class="nm"><b>' + esc(r.name) + '</b><small>' + plural(r.words, 'word', 'words') + (r.minLen === 4 ? ' · 4+ letters' : '') + ' · ' + d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + '</small></span><span class="sc">' + r.score + '</span></div>';
       }).join('') : '<p class="empty">No scores yet. Play a round to get on the board!</p>';
+    }
+    function render() {
+      var tabs = ['classic', 'blitz', 'survival', 'rarity', 'party', 'daily'];
+      var names = { classic: 'Classic', blitz: 'Blitz', survival: 'Survival', rarity: 'Rarity', party: 'Party', daily: 'Daily' };
+      var html = '<div class="seg tabs">' + tabs.map(function (m) { return '<button data-tab="' + m + '" aria-pressed="' + (tab === m) + '">' + names[m] + '</button>'; }).join('') + '</div>';
+      if (tab === 'daily') {
+        html += '<span class="label">Today’s puzzle</span><p class="hint-text">Only each player’s first try counts.</p>' + rowsHtml(S.boards['daily:' + todayKey()] || []) +
+          '<span class="label" style="margin-top:8px">Best daily scores ever</span>' + rowsHtml(S.boards['daily:best'] || []);
+      } else {
+        html += '<div class="seg">' + [4, 5, 6].map(function (n) { return '<button data-size="' + n + '" aria-pressed="' + (size === n) + '">' + n + ' × ' + n + '</button>'; }).join('') + '</div>' +
+          (tab === 'party' ? '<p class="hint-text">Party scores from this phone’s players.</p>' : '') +
+          rowsHtml(S.boards[tab + ':' + size] || []);
+      }
       var body = $('[data-body]', scr.el);
       body.innerHTML = html;
       on(body, '[data-tab]', 'click', function (e) { tab = e.currentTarget.getAttribute('data-tab'); render(); });
       on(body, '[data-size]', 'click', function (e) { size = +e.currentTarget.getAttribute('data-size'); render(); });
     }
     render();
+  }
+
+  // ---------- Hint controls (settings screen and in-game menu) ----------
+  function hintControls() {
+    var st = S.settings;
+    return '<span class="label">Show the hint after</span><div class="seg">' +
+      [[0, 'Off'], [5, '5s'], [10, '10s'], [20, '20s'], [30, '30s']].map(function (o) { return '<button data-delay="' + o[0] + '" aria-pressed="' + (st.hintDelay === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div>' +
+      '<span class="label">Hints show</span><div class="seg">' +
+      '<button data-h3="1" aria-pressed="' + st.hint3 + '">3-letter words</button><button data-h3="0" aria-pressed="' + !st.hint3 + '">Any word</button></div>';
+  }
+  function bindHintControls(root, rerender) {
+    on(root, '[data-delay]', 'click', function (e) { S.settings.hintDelay = +e.currentTarget.getAttribute('data-delay'); save(); rerender(); });
+    on(root, '[data-h3]', 'click', function (e) { S.settings.hint3 = e.currentTarget.getAttribute('data-h3') === '1'; save(); rerender(); });
   }
 
   // ---------- Settings ----------
@@ -796,21 +994,21 @@
       var st = S.settings;
       var body = $('[data-body]', scr.el);
       body.innerHTML =
-        '<div class="card"><span class="label">Hint button</span>' +
-        '<p class="hint-text">Shows after this long without touching the screen, stays for 3 seconds, then waits for your next touch.</p>' +
-        '<div class="seg">' + [[0, 'Off'], [5, '5 sec'], [10, '10 sec'], [20, '20 sec']].map(function (o) { return '<button data-delay="' + o[0] + '" aria-pressed="' + (st.hintDelay === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div>' +
-        '<span class="label">Hints show</span><div class="seg">' +
-        '<button data-h3="1" aria-pressed="' + st.hint3 + '">3-letter words</button><button data-h3="0" aria-pressed="' + !st.hint3 + '">Any word</button></div></div>' +
+        '<div class="card"><span class="label">Colours</span><div class="seg">' +
+        '<button data-theme="original" aria-pressed="' + (st.theme !== 'dark') + '">Original</button><button data-theme="dark" aria-pressed="' + (st.theme === 'dark') + '">Dark</button></div></div>' +
+        '<div class="card"><b style="font-size:18px">Hints</b>' +
+        '<p class="hint-text">A lightbulb pops up above the grid when you haven\u2019t made a move for a while. It stays for 3 seconds. You can also change this from the \u2630 menu during a game.</p>' +
+        hintControls() + '</div>' +
         '<div class="card">' + toggle('sound', 'Sound effects', st.sound) + toggle('vibrate', 'Vibration', st.vibrate) + '</div>' +
         '<button class="btn btn-white" data-profile>' + I.user + 'Edit my profile</button>' +
         '<button class="btn btn-white" data-clear>Clear leaderboards</button>' +
         '<p class="hint-text" style="text-align:center">Word list: ' + WORDS.length.toLocaleString() + ' British English words.</p>';
-      on(body, '[data-delay]', 'click', function (e) { st.hintDelay = +e.currentTarget.getAttribute('data-delay'); save(); render(); });
-      on(body, '[data-h3]', 'click', function (e) { st.hint3 = e.currentTarget.getAttribute('data-h3') === '1'; save(); render(); });
+      bindHintControls(body, render);
+      on(body, '[data-theme]', 'click', function (e) { st.theme = e.currentTarget.getAttribute('data-theme'); save(); applyTheme(); render(); });
       on(body, '[data-tg]', 'click', function (e) { var k = e.currentTarget.getAttribute('data-tg'); st[k] = !st[k]; save(); render(); if (k === 'vibrate') buzz(20); });
       $('[data-profile]', body).onclick = function () { editMyProfile(function () { settings(back); }); };
       $('[data-clear]', body).onclick = function () {
-        confirmBox('Clear all leaderboard scores on this phone?', 'Clear scores', 'Cancel').then(function (y) { if (y) { S.boards = {}; save(); toast('Leaderboards cleared'); } });
+        confirmBox('Clear all leaderboard scores on this phone?', 'Clear scores', 'Cancel').then(function (y) { if (y) { S.boards = {}; S.daily = {}; save(); toast('Leaderboards cleared'); } });
       };
     }
     function toggle(key, label, val) { return '<div class="toggle-row"><span id="tl-' + key + '">' + label + '</span><button class="switch" role="switch" aria-labelledby="tl-' + key + '" aria-checked="' + val + '" data-tg="' + key + '"></button></div>'; }
@@ -826,10 +1024,10 @@
       '<li>Everyone joins the same Wi-Fi, or the host turns on their phone’s hotspot.</li>' +
       '<li>The host picks a mode and shows a code.</li>' +
       '<li>Each friend scans it, then the host scans the reply.</li></ol></div>' +
-      '<button class="big-choice" data-host><span class="ic" style="background:#FFE2C7;color:#C8530F">' + I.wifi + '</span><span><b>Host a game</b><small>Up to 6 players</small></span></button>' +
+      '<button class="big-choice" data-host><span class="ic" style="background:#FFE2C7;color:#C8530F">' + I.wifi + '</span><span><b>Host a game</b><small>Up to 8 players</small></span></button>' +
       '<button class="big-choice" data-join><span class="ic" style="background:#DCE8FF;color:#1E4FA8">' + I.camera + '</span><span><b>Join a game</b><small>Scan the host’s code</small></span></button>' +
       '</div>');
-    on(scr.el, '[data-back]', 'click', home);
+    on(scr.el, '[data-back]', 'click', party);
     $('[data-host]', scr.el).onclick = function () { setup('host'); };
     $('[data-join]', scr.el).onclick = joinGame;
   }
@@ -876,11 +1074,12 @@
 
   // Host
   function hostLobby(cfg) {
-    var me = { id: 'h', name: S.profile.name, avatar: S.profile.avatar, me: true };
+    var me = { id: 'h', key: 'h', name: S.profile.name, avatar: S.profile.avatar, me: true };
     var guests = [];
     var pending = null, busy = false, inGame = false, closed = false, gen = 0, guestSeq = 0;
     var round = null;
-    function players() { return [me].concat(guests.map(function (g) { return { id: g.id, name: g.name, avatar: g.avatar }; })); }
+    var session = { round: 0, totals: {} };
+    function players() { return [me].concat(guests.map(function (g) { return { id: g.id, key: 'd:' + (g.did || g.id), name: g.name, avatar: g.avatar }; })); }
     function broadcast(msg) { guests.forEach(function (g) { send(g.dc, msg); }); }
     function lobbyMsg() { return { t: 'lobby', players: players(), mode: cfg.mode, n: cfg.n, minLen: cfg.minLen }; }
     function teardown() {
@@ -890,7 +1089,7 @@
       if (pending) try { pending.pc.close(); } catch (e) {}
     }
     function newOffer() {
-      if (closed || guests.length >= 5) { pending = null; render(); return; }
+      if (closed || guests.length >= MAX_PLAYERS - 1) { pending = null; render(); return; }
       var my = ++gen;
       pending = null; render();
       WMNet.createOffer().then(function (o) {
@@ -903,11 +1102,15 @@
       o.dc.onmessage = function (e) {
         var m; try { m = JSON.parse(e.data); } catch (err) { return; }
         if (m.t === 'hello') {
-          g.name = String(m.name || 'Player').slice(0, 14); g.avatar = String(m.avatar || 'fox');
+          g.name = String(m.name || 'Player').slice(0, 14); g.avatar = String(m.avatar || 'fox'); g.did = String(m.did || '');
+          // Same phone rejoining: replace its old connection instead of adding a second player.
+          var old = g.did && guests.filter(function (x) { return x !== g && x.did === g.did; })[0];
+          if (old) { old.replaced = true; guests.splice(guests.indexOf(old), 1); try { old.pc.close(); } catch (err) {} }
+          if (S.profile && g.name.toLowerCase() !== S.profile.name.toLowerCase()) rememberPlayer({ name: g.name, avatar: g.avatar });
           if (!g.ready) {
             g.ready = true; guests.push(g); busy = false;
             send(g.dc, { t: 'welcome', id: g.id });
-            Snd.good(3); toast(g.name + ' joined');
+            Snd.good(3); toast(g.name + (old ? ' rejoined' : ' joined'));
             broadcast(lobbyMsg());
             if (!inGame) newOffer();
           }
@@ -948,9 +1151,9 @@
       }
       var body = $('[data-body]', scr.el);
       var list = players();
-      var html = '<div class="card"><span class="label">' + MODES[cfg.mode].name + ' · ' + cfg.n + ' × ' + cfg.n + ' · Players ' + list.length + ' of 6</span><div class="players">' +
+      var html = '<div class="card"><span class="label">' + MODES[cfg.mode].name + ' · ' + cfg.n + ' × ' + cfg.n + ' · Players ' + list.length + ' of ' + MAX_PLAYERS + '</span><div class="players">' +
         list.map(function (p) { return '<div class="prow">' + avatar(p.avatar, 44) + '<b>' + esc(p.name) + '</b><span class="tag">' + (p.id === 'h' ? 'Host' : 'Joined') + '</span></div>'; }).join('') + '</div></div>';
-      if (guests.length < 5) {
+      if (guests.length < MAX_PLAYERS - 1) {
         html += '<div class="card" style="align-items:stretch"><b style="font-size:18px">Add a player</b>';
         if (busy) html += '<div class="status"><span class="spinner"></span>Connecting…</div>';
         else if (!pending) html += '<div class="status"><span class="spinner"></span>Making a code…</div>';
@@ -990,25 +1193,25 @@
       inGame = true;
       var board = makeBoard(cfg.n, cfg.minLen, cfg.seed);
       var everyone = players();
-      round = { done: {}, finished: false, myWords: null, timer: null };
+      round = { done: {}, finished: false, myWords: null, timer: null, board: board };
       round.check = function () {
         if (round.finished || !round.myWords) return;
         var waiting = guests.filter(function (g) { return !round.done[g.id]; });
         if (waiting.length && !round.timeoutHit) return;
         round.finished = true; clearTimeout(round.timer);
         var res = everyone.filter(function (p) { return p.id === 'h' || round.done[p.id] || guests.some(function (g) { return g.id === p.id; }); }).map(function (p) {
-          return { id: p.id, name: p.name, avatar: p.avatar, words: p.id === 'h' ? round.myWords : (round.done[p.id] || []) };
+          return { id: p.id, key: p.key, name: p.name, avatar: p.avatar, words: p.id === 'h' ? round.myWords : (round.done[p.id] || []) };
         });
-        broadcast({ t: 'results', players: res, mode: cfg.mode, n: cfg.n, minLen: cfg.minLen });
         var mine = res.map(function (r) { return Object.assign({}, r, { me: r.id === 'h' }); });
         inGame = false;
-        resultsMulti(cfg, mine, {
-          saveMine: true, againLabel: 'Back to lobby',
+        var out = resultsMulti(cfg, mine, {
+          board: round.board, session: session, saveMine: true, againLabel: 'Next round (back to lobby)',
           again: function () { round = null; broadcast(lobbyMsg()); scr = null; newOffer(); },
           homeLabel: 'Close game', home: function () { teardown(); home(); }
         });
+        broadcast({ t: 'results', players: res, mode: cfg.mode, n: cfg.n, minLen: cfg.minLen, scoring: cfg.scoring, round: out.round, totals: out.table });
       };
-      broadcast({ t: 'start', cells: board.cells, n: cfg.n, minLen: cfg.minLen, mode: cfg.mode, time: cfg.time, players: everyone });
+      broadcast({ t: 'start', cells: board.cells, n: cfg.n, minLen: cfg.minLen, mode: cfg.mode, time: cfg.time, scoring: cfg.scoring, players: everyone });
       var g = playBoard({
         board: board, cfg: cfg, player: me, multiplayer: true,
         onEnd: function (r) {
@@ -1027,7 +1230,7 @@
 
   // Guest
   function joinGame() {
-    var link = null, dc = null, hostPlayers = [], game = null, closed = false, lastCfg = null, myId = null;
+    var link = null, dc = null, hostPlayers = [], game = null, closed = false, lastCfg = null, myId = null, lastBoard = null;
     var scr = mount(backBand('Join a game') + '<div class="scroll" data-body></div>');
     function leave() { closed = true; try { if (link) link.pc.close(); } catch (e) {} }
     on(scr.el, '[data-back]', 'click', function () { leave(); nearby(); });
@@ -1053,7 +1256,7 @@
         });
         l.dcPromise.then(function (ch) {
           dc = ch;
-          ch.onopen = function () { send(dc, { t: 'hello', name: S.profile.name, avatar: S.profile.avatar }); };
+          ch.onopen = function () { send(dc, { t: 'hello', name: S.profile.name, avatar: S.profile.avatar, did: S.deviceId }); };
           if (ch.readyState === 'open') ch.onopen();
           ch.onmessage = onMsg;
           ch.onclose = function () { if (!closed) { closed = true; toast('Lost connection to the host'); home(); } };
@@ -1075,8 +1278,9 @@
       if (m.t === 'welcome') { myId = m.id; }
       else if (m.t === 'lobby') { if (!game || game.isEnded()) lobby(m); else { hostPlayers = m.players; } }
       else if (m.t === 'start') {
-        var cfg = { mode: m.mode, n: m.n, minLen: m.minLen, time: m.time };
+        var cfg = { mode: m.mode, n: m.n, minLen: m.minLen, time: m.time, scoring: m.scoring || 'length' };
         var board = boardFromCells(m.cells, m.n, m.minLen);
+        lastBoard = board;
         game = playBoard({
           board: board, cfg: cfg, player: S.profile, multiplayer: true,
           onEnd: function (r) {
@@ -1088,10 +1292,10 @@
 
       } else if (m.t === 'results') {
         if (game && !game.isEnded()) game.forceEnd();
-        var players = (m.players || []).map(function (p) { return { id: p.id, name: p.name, avatar: p.avatar, words: p.words || [], me: p.id === myId }; });
-        var cfg2 = { mode: m.mode, n: m.n, minLen: m.minLen, time: MODES[m.mode] ? MODES[m.mode].time : 0 };
+        var players = (m.players || []).map(function (p) { return { id: p.id, key: p.key, name: String(p.name).slice(0, 14), avatar: p.avatar, words: (p.words || []).map(String), me: p.id === myId }; });
+        var cfg2 = { mode: m.mode, n: m.n, minLen: m.minLen, scoring: m.scoring || 'length', time: MODES[m.mode] ? MODES[m.mode].time : 0 };
         setTimeout(function () {
-          resultsMulti(cfg2, players, { saveMine: true, note: 'The host can start another round.', homeLabel: 'Leave game', home: function () { leave(); home(); } });
+          resultsMulti(cfg2, players, { board: lastBoard, totals: m.totals || [], round: m.round || 1, saveMine: true, note: 'The host can start another round.', homeLabel: 'Leave game', home: function () { leave(); home(); } });
         }, game && !game.isEnded() ? 1200 : 0);
       } else if (m.t === 'bye') {
         closed = true; toast('The host closed the game'); home();
