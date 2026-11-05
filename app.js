@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 18;
+  var APP_VERSION = 19;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   function $(sel, el) { return (el || document).querySelector(sel); }
@@ -60,12 +60,12 @@
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
     var m = document.querySelector('meta[name="theme-color"]');
     if (m) m.setAttribute('content', dark ? '#E2621C' : '#F26B21');
-    // Tell the browser exactly which look we want, so phone-wide dark modes (like Samsung Internet's)
-    // don't repaint the Original colours.
-    var scheme = t === 'original' ? 'only light' : t === 'dark' ? 'only dark' : 'light dark';
+    // Always tell the browser this page handles light and dark itself. Browsers with their own
+    // dark mode (Samsung Internet, Chrome's auto-dark) only repaint pages that say they're light-only,
+    // so this keeps the Original colours exactly as drawn even when the browser is in dark mode.
     var cs = document.querySelector('meta[name="color-scheme"]');
-    if (cs) cs.setAttribute('content', scheme);
-    document.documentElement.style.colorScheme = dark ? (t === 'auto' ? 'dark' : 'only dark') : (t === 'auto' ? 'light' : 'only light');
+    if (cs) cs.setAttribute('content', 'light dark');
+    document.documentElement.style.colorScheme = 'light dark';
   }
   applyTheme();
   if (darkQuery) {
@@ -1211,7 +1211,7 @@
       body.innerHTML =
         '<div class="card"><span class="label">Colours</span><div class="seg">' +
         '<button data-theme="auto" aria-pressed="' + (st.theme === 'auto') + '">Match phone</button><button data-theme="original" aria-pressed="' + (st.theme === 'original') + '">Original</button><button data-theme="dark" aria-pressed="' + (st.theme === 'dark') + '">Dark</button></div>' +
-        (/SamsungBrowser/i.test(navigator.userAgent) ? '<p class="hint-text"><b>Using Samsung Internet?</b> Its own dark mode can recolour Word Mix whatever you pick here. To see the real colours, turn off its dark mode for websites, or open Word Mix in Chrome and install it from there.</p>' : '') + '</div>' +
+        '</div>' +
         '<div class="card"><b style="font-size:18px">Hints</b>' +
         '<p class="hint-text">A lightbulb pops up above the grid when you haven\u2019t made a move for a while. It stays for 3 seconds. You can also change this from the \u2630 menu during a game.</p>' +
         hintControls() + '</div>' +

@@ -506,3 +506,5 @@ h2.title { margin: 0; font-size: 24px; font-weight: 800; }
 .diag { font-size: 12px; text-align: center; opacity: .85; word-break: break-word; }
 
 .diag-box { margin: 0; padding: 10px; border-radius: 10px; background: var(--board); color: var(--ink); font: 11px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-all; }
+
+.text-input, .code-area { color: var(--ink); background-color: var(--card); }
