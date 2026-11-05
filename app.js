@@ -1022,8 +1022,15 @@
           '<span class="ready-chip" data-ready="' + x.idx + '" hidden>Ready</span><span class="crown" data-crown="' + x.idx + '" hidden>★</span><span class="sc" data-score="' + x.idx + '">0</span></div>';
       }).join('') + '</div></section>' +
       '<section class="show-words"><span class="label">Words</span><div class="stream" data-stream></div><div data-gems></div></section>' +
-      '</div><div class="show-actions" data-actions hidden></div></div>'
+      '</div><div class="show-actions" data-actions hidden></div></div>' +
+      (opts.onReady ? '<div class="ready-bar"><button class="btn ready-btn" data-readyme>' + I.play + 'Ready for next round</button></div>' : '')
     );
+    var rme = $('[data-readyme]', scr.el);
+    if (rme) rme.onclick = function () {
+      if (rme.classList.contains('done')) return;
+      rme.classList.add('done'); rme.innerHTML = '\u2713 Ready! Waiting for the host\u2026';
+      buzz(30); Snd.good(3); opts.onReady();
+    };
     var el = scr.el, stream = $('[data-stream]', el), done = false, timers = [];
     function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
     scr.cleanup = function () { timers.forEach(clearTimeout); };
@@ -1131,48 +1138,6 @@
     };
   }
 
-  // A player's own summary on their phone while the big reveal plays on the host screen.
-  function resultsPersonal(cfg, players, opts) {
-    var scoring = cfg.scoring || 'length';
-    var R = computeRound(players, scoring);
-    if (opts.saveMine) R.rows.forEach(function (r) { if (r.p.me) addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
-    var mineIdx = -1;
-    R.rows.forEach(function (r, i) { if (r.p.me) mineIdx = i; });
-    var mine = R.rows[mineIdx] || { list: [], score: 0, p: S.profile };
-    var table = opts.totals || [];
-    var myKey = mine.p.key || mine.p.id;
-    var overallRank = 0, myTotal = mine.score;
-    table.forEach(function (t, i) { if (t.key === myKey) { overallRank = i + 1; myTotal = t.total; } });
-    var uniq = mine.list.filter(function (x) { return x.unique; }), dup = mine.list.filter(function (x) { return !x.unique; });
-    function rowsHtml(list, kind) {
-      return list.length ? list.map(function (x, i) {
-        return '<div class="wrow ' + kind + '" style="animation-delay:' + (0.4 + i * 0.12) + 's"><b>' + esc(x.w.toUpperCase()) + '</b><span class="pts">' + (kind === 'unique' ? (x.p / 2) + ' × 2 = ' + x.p : '+' + x.p) + '</span></div>';
-      }).join('') : '<p class="empty" style="padding:8px">None this round.</p>';
-    }
-    var scr = mount(
-      '<header class="band" style="padding-top:calc(22px + env(safe-area-inset-top));gap:6px;align-items:center">' +
-      '<div class="eyebrow">Round ' + (opts.round || 1) + ' · your results</div>' +
-      '<div class="total" data-total>0</div>' +
-      '<div class="sub">#' + (mineIdx + 1) + ' of ' + R.rows.length + ' this round' + (overallRank ? ' · total ' + myTotal + ' (#' + overallRank + ' overall)' : '') + '</div></header>' +
-      '<div class="scroll">' +
-      '<button class="btn ready-btn" data-ready>' + I.play + 'Ready for next round</button>' +
-      '<span class="label">Unique words · double points</span><div class="players">' + rowsHtml(uniq, 'unique') + '</div>' +
-      '<span class="label">Shared words · normal points</span><div class="players">' + rowsHtml(dup, 'shared') + '</div>' +
-      '<p class="hint-text" style="text-align:center">Watch the host’s screen for the full results.</p>' +
-      '<button class="btn btn-white" data-leave>Leave game</button></div>'
-    );
-    setTimeout(function () { tallyUp($('[data-total]', scr.el), mine.score); }, 400);
-    var rb = $('[data-ready]', scr.el);
-    rb.onclick = function () {
-      if (rb.classList.contains('done')) return;
-      rb.classList.add('done'); rb.innerHTML = '✓ Ready! Waiting for the host…';
-      buzz(30); Snd.good(3);
-      opts.onReady();
-    };
-    $('[data-leave]', scr.el).onclick = opts.onLeave;
-    return scr;
-  }
-
   // ---------- Leaderboards ----------
   function leaderboards(back, startTab) {
     var tab = startTab || 'classic', size = 4;
@@ -1227,7 +1192,8 @@
       var body = $('[data-body]', scr.el);
       body.innerHTML =
         '<div class="card"><span class="label">Colours</span><div class="seg">' +
-        '<button data-theme="auto" aria-pressed="' + (st.theme === 'auto') + '">Match phone</button><button data-theme="original" aria-pressed="' + (st.theme === 'original') + '">Original</button><button data-theme="dark" aria-pressed="' + (st.theme === 'dark') + '">Dark</button></div></div>' +
+        '<button data-theme="auto" aria-pressed="' + (st.theme === 'auto') + '">Match phone</button><button data-theme="original" aria-pressed="' + (st.theme === 'original') + '">Original</button><button data-theme="dark" aria-pressed="' + (st.theme === 'dark') + '">Dark</button></div>' +
+        (/SamsungBrowser/i.test(navigator.userAgent) ? '<p class="hint-text"><b>Using Samsung Internet?</b> Its own dark mode can recolour Word Mix whatever you pick here. To see the real colours, turn off its dark mode for websites, or open Word Mix in Chrome and install it from there.</p>' : '') + '</div>' +
         '<div class="card"><b style="font-size:18px">Hints</b>' +
         '<p class="hint-text">A lightbulb pops up above the grid when you haven\u2019t made a move for a while. It stays for 3 seconds. You can also change this from the \u2630 menu during a game.</p>' +
         hintControls() + '</div>' +
@@ -1299,7 +1265,7 @@
     var c = $('[data-qr]', el);
     if (!c) return;
     var card = c.closest('.card') || el;
-    var w = Math.min(320, (card.clientWidth || 320) - 32 - 28);
+    var w = Math.min(320, (card.clientWidth || 320) - 72, window.innerWidth - 100);
     WMQR.toCanvas(c, code, { size: Math.max(220, w), dark: '#2E2117' });
   }
   function send(dc, msg) { try { if (dc && dc.readyState === 'open') dc.send(JSON.stringify(msg)); } catch (e) {} }
@@ -1316,7 +1282,7 @@
     function broadcast(msg) { guests.forEach(function (g) { send(g.dc, msg); }); }
     function lobbyMsg() { return { t: 'lobby', players: players(), mode: cfg.mode, n: cfg.n, minLen: cfg.minLen }; }
     function teardown() {
-      closed = true; stopCam();
+      closed = true;
       broadcast({ t: 'bye' });
       guests.forEach(function (g) { try { g.pc.close(); } catch (e) {} });
       if (pending) try { pending.pc.close(); } catch (e) {}
@@ -1377,30 +1343,11 @@
       }
     }
     var scr = null;
-    // The host's front camera watches for a joiner's reply code, so the host doesn't need to tap anything.
-    var cam = { box: null, ctl: null, running: false };
-    function camBox() {
-      if (!cam.box) {
-        cam.box = document.createElement('div');
-        cam.box.className = 'selfie-cam';
-        cam.box.innerHTML = '<video aria-label="Front camera view" muted playsinline></video><span>Front camera</span>';
-      }
-      return cam.box;
-    }
-    function startCam() {
-      if (cam.running || closed || inGame) return;
-      cam.running = true;
-      WMNet.startScanner($('video', camBox()), function (code) { cam.running = false; buzz(40); Snd.tone(1046, 0.1, 'sine', 0.06); accept(code); },
-        function () { cam.running = false; cam.failed = true; render(); }, { facing: 'user', interval: 200 }).then(function (c) {
-          cam.ctl = c; if (!cam.running) c.stop();
-        });
-    }
-    function stopCam() { cam.running = false; if (cam.ctl) { cam.ctl.stop(); cam.ctl = null; } }
     function render() {
-      if (inGame || closed) { stopCam(); return; }
+      if (inGame || closed) return;
       if (!scr || !scr.el.isConnected) {
         scr = mount(backBand('Host a game') + '<div class="scroll" data-body></div>');
-        scr.cleanup = function () { stopCam(); };
+        scr.cleanup = function () {};
         on(scr.el, '[data-back]', 'click', function () {
           confirmBox('Close this game?', 'Close game', 'Stay').then(function (y) { if (y) { teardown(); nearby(); } });
         });
@@ -1415,22 +1362,17 @@
         if (busy) html += '<div class="status"><span class="spinner"></span>Connecting…</div>';
         else if (!pending) html += '<div class="status"><span class="spinner"></span>Making a code…</div>';
         else html += '<p class="hint-text"><b>1.</b> Your friend taps <b>Party mode</b> \u2192 <b>Phone to phone</b> \u2192 <b>Join a game</b> and scans this code.</p>' + qrHtml() +
-          '<p class="hint-text"><b>2.</b> They turn their phone around and hold their screen up to this screen. ' + (cam.failed ? 'The front camera isn\u2019t available, so tap the button below to scan their code instead.' : 'Your front camera picks it up automatically.') + '</p>' +
-          (cam.failed ? '' : '<div data-cam></div>') +
-          '<button class="btn btn-white" data-scan>' + I.camera + 'Scan with the back camera instead</button>' +
+          '<p class="hint-text"><b>2.</b> A code appears on their phone. Tap below and point your camera at it.</p>' +
+          '<button class="btn btn-blue" data-scan>' + I.camera + 'Scan their code</button>' +
           '<button class="btn btn-ghost" data-text>Can\u2019t scan? Use a text code</button>';
         html += '</div>';
       }
       html += '<button class="btn btn-orange" data-start ' + (guests.length ? '' : 'disabled') + '>' + I.play + 'Start game</button>';
       if (!guests.length) html += '<p class="hint-text" style="text-align:center">Waiting for at least one friend to join.</p>';
-      if (cam.box && cam.box.parentNode) cam.box.parentNode.removeChild(cam.box);
       body.innerHTML = html;
-      if (!(pending && !busy)) stopCam();
       if (pending && !busy) {
         drawQr(body, pending.code);
-        var slot = $('[data-cam]', body);
-        if (slot) { slot.appendChild(camBox()); startCam(); } else stopCam();
-        $('[data-scan]', body).onclick = function () { stopCam(); openScanner('Point at the code on your friend\u2019s phone', accept); };
+        $('[data-scan]', body).onclick = function () { openScanner('Point at the code on your friend\u2019s phone', accept); };
         $('[data-text]', body).onclick = function () { codeFallback(pending.code, accept, 'Their reply code'); };
       }
       var st = $('[data-start]', body);
@@ -1438,7 +1380,6 @@
     }
     function accept(code) {
       if (!pending || busy) return;
-      stopCam();
       busy = true; render();
       var p = pending;
       WMNet.acceptAnswer(p.pc, code).then(function () {
@@ -1451,7 +1392,7 @@
     }
     function startRound() {
       if (!guests.length) return;
-      gen++; stopCam();
+      gen++;
       if (pending && !busy) { try { pending.pc.close(); } catch (e) {} pending = null; }
       inGame = true; resultsApi = null;
       var board = makeBoard(cfg.n, cfg.minLen, cfg.seed);
@@ -1518,7 +1459,7 @@
       WMNet.answerOffer(code).then(function (l) {
         if (closed) { l.pc.close(); return; }
         link = l;
-        body.innerHTML = '<div class="card" style="align-items:stretch"><b style="font-size:18px">Now show this to the host</b><p class="hint-text">Turn your phone around and hold this code up to the host\u2019s screen, about a hand\u2019s width away. Their front camera reads it by itself. Turn your brightness up if it\u2019s slow.</p>' + qrHtml() +
+        body.innerHTML = '<div class="card" style="align-items:stretch"><b style="font-size:18px">Now show this to the host</b><p class="hint-text">The host taps <b>Scan their code</b> and points their camera at this. Turn your brightness up if it\u2019s slow to scan.</p>' + qrHtml() +
           '<div class="status"><span class="spinner"></span>Waiting for the host…</div><button class="btn btn-ghost" data-text>Can’t scan? Use a text code</button></div>';
         drawQr(body, l.code);
         $('[data-text]', body).onclick = function () { codeFallback(l.code, null); };
@@ -1567,9 +1508,10 @@
         var players = (m.players || []).map(function (p) { return { id: p.id, key: p.key, name: String(p.name).slice(0, 14), avatar: p.avatar, words: (p.words || []).map(String), me: p.id === myId }; });
         var cfg2 = { mode: m.mode, n: m.n, minLen: m.minLen, scoring: m.scoring || 'length', time: MODES[m.mode] ? MODES[m.mode].time : 0 };
         setTimeout(function () {
-          resultsPersonal(cfg2, players, { totals: m.totals || [], round: m.round || 1, saveMine: true,
+          resultsShow(cfg2, players, { board: lastBoard, totals: m.totals || [], round: m.round || 1, saveMine: true,
+            note: 'The host starts the next round.',
             onReady: function () { send(dc, { t: 'ready' }); },
-            onLeave: function () { confirmBox('Leave this game?', 'Leave', 'Stay').then(function (y) { if (y) { leave(); home(); } }); } });
+            actions: [{ label: 'Leave game', run: function () { confirmBox('Leave this game?', 'Leave', 'Stay').then(function (y) { if (y) { leave(); home(); } }); } }] });
         }, game && !game.isEnded() ? 1200 : 0);
       } else if (m.t === 'bye') {
         closed = true; toast('The host closed the game'); home();

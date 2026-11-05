@@ -410,12 +410,6 @@ h2.title { margin: 0; font-size: 24px; font-weight: 800; }
   .scroll.home-grid .big-choice b { font-size: 26px; }
 }
 
-/* Host's front-camera preview */
-.selfie-cam { position: relative; align-self: center; width: 180px; height: 135px; border-radius: 16px; overflow: hidden; background: #000; box-shadow: 0 0 0 3px var(--blue); }
-.selfie-cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-.selfie-cam span { position: absolute; left: 8px; bottom: 6px; font-size: 11px; font-weight: 800; color: #FFFFFF; text-transform: uppercase; letter-spacing: .06em; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
-.selfie-cam::after { content: ''; position: absolute; inset: 0; border-radius: 16px; box-shadow: inset 0 0 0 3px rgba(255,255,255,.0); animation: camPulse 1.6s ease-in-out infinite; pointer-events: none; }
-@keyframes camPulse { 50% { box-shadow: inset 0 0 0 4px rgba(47,111,222,.8); } }
 
 /* ---------- Animated results show ---------- */
 .show-band { gap: 8px; }
@@ -491,3 +485,6 @@ h2.title { margin: 0; font-size: 24px; font-weight: 800; }
   .screen.spect > .spect-players { grid-column: 1; grid-row: 2 / span 3; overflow-y: auto; padding-left: max(16px, env(safe-area-inset-left)); }
 }
 .screen.spect > .spect-players { order: 3; }
+
+.ready-bar { position: sticky; bottom: 0; z-index: 5; padding: 10px max(16px, calc((100% - var(--content, 640px)) / 2)) calc(12px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 70%, rgba(0,0,0,0)); }
+.ready-bar .ready-btn { width: 100%; }
