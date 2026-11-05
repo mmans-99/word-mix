@@ -237,6 +237,17 @@
     return score > prevBest && score > 0;
   }
 
+  // ---------- Keep the screen awake during play and nearby setup ----------
+  var wake = { lock: null, want: false };
+  function keepAwake(on) {
+    wake.want = on;
+    if (!('wakeLock' in navigator)) return;
+    if (on && !wake.lock && !document.hidden) {
+      navigator.wakeLock.request('screen').then(function (l) { wake.lock = l; l.addEventListener('release', function () { wake.lock = null; }); }).catch(function () {});
+    } else if (!on && wake.lock) { wake.lock.release().catch(function () {}); wake.lock = null; }
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && wake.want) keepAwake(true); });
+
   // ---------- Screen management ----------
   var current = null;
   function mount(html, cls) {
@@ -244,6 +255,7 @@
     var old = $$('.screen', app).filter(function (s) { return !s.classList.contains('leaving'); });
     old.forEach(function (s) { s.classList.add('leaving'); setTimeout(function () { s.remove(); }, 280); });
     window.WM_AT_HOME = false;
+    keepAwake(true);
     var el = document.createElement('section');
     el.className = 'screen' + (cls ? ' ' + cls : '');
     el.innerHTML = html;
@@ -343,6 +355,7 @@
     $('[data-settings]', el).onclick = function () { settings(home); };
     $('[data-boards]', el).onclick = function () { leaderboards(home); };
     window.WM_AT_HOME = true;
+    keepAwake(false);
     on(el, '[data-go]', 'click', function (e) {
       var go = e.currentTarget.getAttribute('data-go');
       if (go === 'solo') setup('solo');
@@ -1247,6 +1260,7 @@
       function (err) { $('[data-st]', o).textContent = err.message; }).then(function (c) { ctl = c; if (closed) c.stop(); });
     return { close: close };
   }
+  var SHOW_CODES = /codes/.test(location.hash);
   function codeFallback(code, onPaste, pasteLabel) {
     var o = document.createElement('div');
     o.className = 'overlay';
@@ -1375,7 +1389,7 @@
         else html += '<p class="hint-text"><b>1.</b> Your friend taps <b>Party mode</b> \u2192 <b>Phone to phone</b> \u2192 <b>Join a game</b> and scans this code.</p>' + qrHtml() +
           '<p class="hint-text"><b>2.</b> A code appears on their phone. Tap below and point your camera at it.</p>' +
           '<button class="btn btn-blue" data-scan>' + I.camera + 'Scan their code</button>' +
-          '<button class="btn btn-ghost" data-text>Can\u2019t scan? Use a text code</button>';
+          (SHOW_CODES ? '<button class="btn btn-ghost" data-text>Use a text code</button>' : '');
         html += '</div>';
       }
       html += '<button class="btn btn-orange" data-start ' + (guests.length ? '' : 'disabled') + '>' + I.play + 'Start game</button>';
@@ -1384,7 +1398,7 @@
       if (pending && !busy) {
         drawQr(body, pending.code);
         $('[data-scan]', body).onclick = function () { openScanner('Point at the code on your friend\u2019s phone', accept); };
-        $('[data-text]', body).onclick = function () { codeFallback(pending.code, accept, 'Their reply code'); };
+        if (SHOW_CODES) $('[data-text]', body).onclick = function () { codeFallback(pending.code, accept, 'Their reply code'); };
       }
       var st = $('[data-start]', body);
       if (st) st.onclick = startRound;
@@ -1460,9 +1474,9 @@
     function step1() {
       var body = $('[data-body]', scr.el);
       body.innerHTML = netWarning() + '<div class="card"><b style="font-size:18px">Scan the host’s code</b><p class="hint-text">Ask the host to tap <b>Host a game</b>. Their screen will show a code.</p>' +
-        '<button class="btn btn-blue" data-scan>' + I.camera + 'Open camera</button><button class="btn btn-ghost" data-text>Can’t scan? Use a text code</button></div>';
+        '<button class="btn btn-blue" data-scan>' + I.camera + 'Open camera</button>' + (SHOW_CODES ? '<button class="btn btn-ghost" data-text>Use a text code</button>' : '') + '</div>';
       $('[data-scan]', body).onclick = function () { openScanner('Point at the code on the host’s phone', gotOffer); };
-      $('[data-text]', body).onclick = function () { codeFallback(null, gotOffer, 'Host’s code'); };
+      if (SHOW_CODES) $('[data-text]', body).onclick = function () { codeFallback(null, gotOffer, 'Host’s code'); };
     }
     function gotOffer(code) {
       var body = $('[data-body]', scr.el);
@@ -1471,11 +1485,16 @@
         if (closed) { l.pc.close(); return; }
         link = l;
         body.innerHTML = '<div class="card" style="align-items:stretch"><b style="font-size:18px">Now show this to the host</b><p class="hint-text">The host taps <b>Scan their code</b> and points their camera at this. Turn your brightness up if it\u2019s slow to scan.</p>' + qrHtml() +
-          '<div class="status"><span class="spinner"></span>Waiting for the host…</div><button class="btn btn-ghost" data-text>Can’t scan? Use a text code</button></div>';
+          '<div class="status" data-st><span class="spinner"></span>Waiting for the host to scan this…</div>' + (SHOW_CODES ? '<button class="btn btn-ghost" data-text>Use a text code</button>' : '') + '</div>';
         drawQr(body, l.code);
-        $('[data-text]', body).onclick = function () { codeFallback(l.code, null); };
+        if (SHOW_CODES) $('[data-text]', body).onclick = function () { codeFallback(l.code, null); };
+        // Stay on this screen if a connection attempt fails; offer a fresh try instead of jumping back.
         l.pc.addEventListener('connectionstatechange', function () {
-          if (l.pc.connectionState === 'failed') { toast('Could not connect. Check you are on the same Wi-Fi.'); if (!closed) { leave(); joinGame(); } }
+          if (l.pc.connectionState !== 'failed' || closed || dc && dc.readyState === 'open') return;
+          var st = $('[data-st]', scr.el);
+          if (st) st.outerHTML = '<div class="card net-warn"><b>Couldn\u2019t connect yet</b><p class="hint-text">Check both devices are on the same Wi-Fi or hotspot, then make a new code and let the host scan it again.</p><button class="btn btn-blue" data-retry>Make a new code</button></div>';
+          var rt = $('[data-retry]', scr.el);
+          if (rt) rt.onclick = function () { try { l.pc.close(); } catch (e) {} link = null; step1(); };
         });
         l.dcPromise.then(function (ch) {
           dc = ch;

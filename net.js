@@ -51,13 +51,26 @@
   }
   function newPc() { return new RTCPeerConnection({ iceServers: [] }); }
 
+  // Phones only reveal their real Wi-Fi address to the connection while the camera is running.
+  // Without it they use a private name that the other phone often can't find on a hotspot.
+  // So the camera runs (unseen) for the second or two it takes to prepare a code.
+  async function holdCamera() {
+    try {
+      var s = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false });
+      return function () { s.getTracks().forEach(function (t) { t.stop(); }); };
+    } catch (e) { return function () {}; }
+  }
+
   // Host: one offer per guest.
   async function createOffer() {
-    var pc = newPc();
-    var dc = pc.createDataChannel('wordmix', { ordered: true });
-    await pc.setLocalDescription(await pc.createOffer());
-    await waitIce(pc);
-    return { pc: pc, dc: dc, code: await pack(pc.localDescription) };
+    var release = await holdCamera();
+    try {
+      var pc = newPc();
+      var dc = pc.createDataChannel('wordmix', { ordered: true });
+      await pc.setLocalDescription(await pc.createOffer());
+      await waitIce(pc);
+      return { pc: pc, dc: dc, code: await pack(pc.localDescription) };
+    } finally { release(); }
   }
   async function acceptAnswer(pc, code) {
     var d = await unpack(code);
@@ -68,12 +81,15 @@
   async function answerOffer(code) {
     var d = await unpack(code);
     if (d.type !== 'offer') throw new Error('That is a reply code. Scan the code on the host’s phone.');
-    var pc = newPc();
-    var dcPromise = new Promise(function (r) { pc.ondatachannel = function (e) { r(e.channel); }; });
-    await pc.setRemoteDescription(d);
-    await pc.setLocalDescription(await pc.createAnswer());
-    await waitIce(pc);
-    return { pc: pc, dcPromise: dcPromise, code: await pack(pc.localDescription) };
+    var release = await holdCamera();
+    try {
+      var pc = newPc();
+      var dcPromise = new Promise(function (r) { pc.ondatachannel = function (e) { r(e.channel); }; });
+      await pc.setRemoteDescription(d);
+      await pc.setLocalDescription(await pc.createAnswer());
+      await waitIce(pc);
+      return { pc: pc, dcPromise: dcPromise, code: await pack(pc.localDescription) };
+    } finally { release(); }
   }
 
   // Camera access also lets the browser share this phone's local network address,
