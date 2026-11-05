@@ -310,7 +310,7 @@
       '<div class="band-row"><button class="player-chip" data-profile aria-label="Edit profile">' + avatar(S.profile.avatar, 40) + '<span>' + esc(S.profile.name) + '</span></button>' +
       '<button class="icon-btn" data-settings aria-label="Settings">' + I.gear + '</button></div>' +
       '<div style="display:flex;justify-content:center;padding:8px 0 4px">' + logo(true, true) + '</div></header>' +
-      '<div class="scroll">' +
+      '<div class="scroll home-grid">' +
       choice('solo', I.user, '#FFE2C7', '#C8530F', 'Play solo', 'Classic, Blitz, Survival or Zen') +
       choice('party', I.users, '#DCE8FF', '#1E4FA8', 'Party mode', '2 to 8 players, one phone or many') +
       choice('daily', I.calendar, '#DDF0E8', '#2E7D1E', 'Daily Puzzle', today ? 'Played today: ' + plural(today.score, 'point', 'points') : 'Today’s board, your first try counts') +
@@ -473,7 +473,7 @@
       '<div class="wordbar"><div class="w placeholder" data-word>Swipe to start</div><div class="m" data-msg aria-live="polite">Lift your finger to submit</div></div>' +
       '<div class="board-wrap" data-wrap><div class="hint-row" data-foot></div><div class="board-panel"><div class="board" data-board style="--n:' + n + '"></div></div></div>' +
       '<div class="game-foot"></div>'
-    );
+    , 'game');
     var el = scr.el;
     var boardEl = $('[data-board]', el), wordEl = $('[data-word]', el), msgEl = $('[data-msg]', el), foot = $('[data-foot]', el);
     var cellsEl = [], tilesEl = [];
@@ -495,8 +495,14 @@
     var geo = { side: 0, gap: 0, tile: 0, pitch: 0 };
     function layout() {
       var wrap = $('[data-wrap]', el);
-      var w = wrap.clientWidth - 32, h = wrap.clientHeight - 8 - 66;
-      var side = Math.max(200, Math.min(w, h, 520)) - 16;
+      // In landscape the hint sits beside the board; in portrait, just above it.
+      var land = window.matchMedia('(orientation: landscape) and (min-width: 600px)').matches;
+      var hrow = $('[data-foot]', el), wbar = $('.wordbar', el);
+      if (land && hrow.parentNode !== el) el.insertBefore(hrow, wbar.nextSibling);
+      if (!land && hrow.parentNode !== wrap) wrap.insertBefore(hrow, wrap.firstChild);
+      var cs = getComputedStyle(wrap), hr = $('.hint-row', wrap);
+      var w = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), h = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - (hr ? hr.offsetHeight : 0);
+      var side = Math.max(180, Math.min(w, h, 720)) - 16;
       var gap = Math.round(side * (n === 4 ? 0.03 : 0.022));
       var tile = (side - gap * (n - 1)) / n;
       geo = { side: side, gap: gap, tile: tile, pitch: tile + gap };
