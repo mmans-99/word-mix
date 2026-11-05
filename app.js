@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 17;
+  var APP_VERSION = 18;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   function $(sel, el) { return (el || document).querySelector(sel); }
@@ -1281,7 +1281,9 @@
   }
   // Phones need a shared network (Wi-Fi router or a hotspot) even with no internet.
   function netWarning() {
-    if (navigator.onLine !== false) return '';
+    var chromeAndroid = /Android/i.test(navigator.userAgent) && /Chrome\//.test(navigator.userAgent) && !/SamsungBrowser|EdgA|OPR|Firefox/i.test(navigator.userAgent);
+    var note = chromeAndroid ? '<div class="card net-warn"><b>Playing over a phone hotspot?</b><p class="hint-text">Chrome on Android can\u2019t connect to other devices through this phone\u2019s own hotspot. Use Word Mix in <b>Samsung Internet</b> on this phone for hotspot games. Chrome works fine when everyone is on the same Wi-Fi router.</p></div>' : '';
+    if (navigator.onLine !== false) return note;
     return '<div class="card net-warn" role="alert"><b>This device isn\u2019t on any network</b>' +
       '<p class="hint-text">Phones can\u2019t connect with Wi-Fi off or in Airplane mode. With no internet, the host turns on their phone\u2019s <b>hotspot</b> (mobile data can be off), and everyone joins that Wi-Fi. Or all join the same Wi-Fi router.</p></div>';
   }
@@ -1394,7 +1396,7 @@
         (cfg.screenOnly ? '<p class="hint-text">This device is the big screen and doesn\u2019t play.' + (list.length ? '' : ' Waiting for players to join.') + '</p>' : '') + '</div></div>';
       if (guests.length < MAX_PLAYERS - 1) {
         html += '<div class="card" style="align-items:stretch"><b style="font-size:18px">Add a player</b>';
-        if (busy) html += '<div class="status"><span class="spinner"></span>Connecting…</div><pre class="diag-box" data-diag></pre>';
+        if (busy) html += '<div class="status"><span class="spinner"></span>Connecting…</div>' + (SHOW_CODES ? '<pre class="diag-box" data-diag></pre>' : '');
         else if (!pending) html += '<div class="status"><span class="spinner"></span>Making a code…</div>';
         else html += '<p class="hint-text"><b>1.</b> Your friend taps <b>Party mode</b> \u2192 <b>Phone to phone</b> \u2192 <b>Join a game</b> and scans this code.</p>' + qrHtml() +
           '<p class="hint-text"><b>2.</b> A code appears on their phone. Tap below and point your camera at it.</p>' +
@@ -1498,12 +1500,12 @@
         if (closed) { l.pc.close(); return; }
         link = l;
         body.innerHTML = '<div class="card" style="align-items:stretch"><b style="font-size:18px">Show this to the host</b><p class="hint-text">The host taps <b>Scan their code</b> and points their phone at this code.</p>' + qrHtml() +
-          '<div class="status"><span class="spinner"></span>Waiting for the host…</div><pre class="diag-box" data-diag></pre>' + (SHOW_CODES ? '<button class="btn btn-ghost" data-text>Use a text code</button>' : '') + '</div>';
+          '<div class="status"><span class="spinner"></span>Waiting for the host…</div>' + (SHOW_CODES ? '<pre class="diag-box" data-diag></pre>' : '') + (SHOW_CODES ? '<button class="btn btn-ghost" data-text>Use a text code</button>' : '') + '</div>';
         drawQr(body, l.code);
-        liveDiag($('[data-diag]', body), l.pc);
+        if ($('[data-diag]', body)) liveDiag($('[data-diag]', body), l.pc);
         if (SHOW_CODES) $('[data-text]', body).onclick = function () { codeFallback(l.code, null); };
         l.pc.addEventListener('connectionstatechange', function () {
-          if (l.pc.connectionState === 'failed') toast('Could not connect. Screenshot this screen for troubleshooting.', 5000);
+          if (l.pc.connectionState === 'failed') toast('Could not connect. Check you are on the same Wi-Fi or hotspot.', 5000);
         });
         l.dcPromise.then(function (ch) {
           dc = ch;
