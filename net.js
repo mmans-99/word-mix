@@ -5,11 +5,16 @@
   var PREFIX = 'WM1';
   var JSQR_URL = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
 
-  function slimSdp(sdp) {
+  // The host's code leaves out its own addresses. The joining device then has nobody to call and simply
+  // waits; once the host scans the reply, the host calls the joiner and the joiner answers. This stops the
+  // joiner giving up if the host takes a while to scan. (It also makes the host's QR code smaller.)
+  function slimSdp(sdp, isOffer) {
     return sdp.split(/\r?\n/).filter(function (l) {
       if (!l) return false;
+      if (isOffer && /^a=(candidate|end-of-candidates)/.test(l)) return false;
       if (/^a=candidate:.* tcp /i.test(l)) return false;
-      if (/^a=(extmap|ice-options|msid-semantic)/.test(l)) return false;
+      if (/^a=(extmap|msid-semantic)/.test(l)) return false;
+      if (!isOffer && /^a=ice-options/.test(l)) return false;
       return true;
     }).join('\r\n') + '\r\n';
   }
@@ -30,7 +35,7 @@
     return new TextDecoder().decode(await new Response(ds.readable).arrayBuffer());
   }
   async function pack(desc) {
-    var c = await compress(slimSdp(desc.sdp));
+    var c = await compress(slimSdp(desc.sdp, desc.type === 'offer'));
     return PREFIX + (desc.type === 'offer' ? 'O' : 'A') + c.z + WMQR.b45encode(c.bytes);
   }
   async function unpack(code) {

@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 14;
+  var APP_VERSION = 15;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   function $(sel, el) { return (el || document).querySelector(sel); }
