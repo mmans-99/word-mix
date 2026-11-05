@@ -389,6 +389,11 @@
         [4, 5, 6].map(function (n) { return '<button data-size="' + n + '" aria-pressed="' + (cfg.size === n) + '">' + n + ' × ' + n + '</button>'; }).join('') + '</div>' +
         '<span class="label">Shortest word</span><div class="seg">' +
         [3, 4].map(function (n) { return '<button data-min="' + n + '" aria-pressed="' + (cfg.minLen === n) + '">' + n + ' letters</button>'; }).join('') + '</div>';
+      if (kind === 'host') {
+        html += '<span class="label">This device</span><div class="seg">' +
+          '<button data-screen="0" aria-pressed="' + !cfg.screenOnly + '">Plays too</button><button data-screen="1" aria-pressed="' + !!cfg.screenOnly + '">Big screen only</button></div>' +
+          '<p class="hint-text">' + (cfg.screenOnly ? 'This screen shows the board, the live word counts and the animated results, like a TV. Everyone else plays on their phones. Best on an iPad or laptop placed where everyone can see it.' : 'You play on this device too, and it shows the animated results at the end of each round.') + '</p>';
+      }
       if (kind === 'pass') {
         html += '<span class="label">Players (' + players.length + ' of ' + MAX_PLAYERS + ')</span><div class="players">' +
           players.map(function (p, i) { return '<div class="prow">' + avatar(p.avatar, 44) + '<b>' + esc(p.name) + '</b>' + (players.length > 1 ? '<button class="x" data-rm="' + i + '" aria-label="Remove ' + esc(p.name) + '">' + I.close + '</button>' : '') + '</div>'; }).join('') +
@@ -401,6 +406,7 @@
       body.innerHTML = html;
       on(body, '[data-mode]', 'click', function (e) { cfg.mode = e.currentTarget.getAttribute('data-mode'); render(); });
       on(body, '[data-ptime]', 'click', function (e) { cfg.partyTime = +e.currentTarget.getAttribute('data-ptime'); render(); });
+      on(body, '[data-screen]', 'click', function (e) { cfg.screenOnly = e.currentTarget.getAttribute('data-screen') === '1'; render(); });
       on(body, '[data-scoring]', 'click', function (e) { cfg.scoring = e.currentTarget.getAttribute('data-scoring'); render(); });
       on(body, '[data-size]', 'click', function (e) { cfg.size = +e.currentTarget.getAttribute('data-size'); render(); });
       on(body, '[data-min]', 'click', function (e) { cfg.minLen = +e.currentTarget.getAttribute('data-min'); render(); });
@@ -422,7 +428,8 @@
       mode: cfg.mode, n: cfg.size, minLen: cfg.minLen, seed: null,
       scoring: cfg.mode === 'rarity' ? 'rarity' : cfg.mode === 'party' ? (cfg.scoring || 'length') : 'length',
       time: cfg.mode === 'party' ? (cfg.partyTime || 180) : MODES[cfg.mode].time,
-      survival: cfg.mode === 'survival'
+      survival: cfg.mode === 'survival',
+      screenOnly: !!cfg.screenOnly
     };
   }
   function startDaily() {
@@ -587,6 +594,7 @@
       foundSet.add(w); found.push(w);
       setMsg(['Nice!', 'Got it!', 'Good one!', 'Yes!', 'Lovely!'][found.length % 5], 'good', W);
       if (cfg.survival) addTime(survivalBonus(w.length));
+      if (opts.onWord) opts.onWord(found.length);
       Snd.good(w.length); buzz(15);
       var cnt = $('[data-count]', el); $('b', cnt).textContent = found.length;
       cnt.classList.remove('pop'); void cnt.offsetWidth; cnt.classList.add('pop');
@@ -829,10 +837,12 @@
     var board = makeBoard(cfg.n, cfg.minLen, cfg.seed);
     var results = [];
     function turn(i) {
-      if (i >= players.length) return resultsMulti(cfg, players.map(function (p, k) { return { key: p.name.toLowerCase(), name: p.name, avatar: p.avatar, words: results[k].words, hints: results[k].hints }; }), {
+      if (i >= players.length) return resultsShow(cfg, players.map(function (p, k) { return { key: p.name.toLowerCase(), name: p.name, avatar: p.avatar, words: results[k].words, hints: results[k].hints }; }), {
         board: board, session: session, save: true,
-        again: function () { playPass(cfg, players, session); },
-        againLabel: 'Next round'
+        actions: [
+          { label: 'Next round', cls: 'btn-blue', icon: I.play, run: function () { playPass(cfg, players, session); } },
+          { label: 'Home', run: home }
+        ]
       });
       var p = players[i];
       var scr = mount(
@@ -885,83 +895,282 @@
   function standings(session) {
     return Object.keys(session.totals).map(function (k) { return Object.assign({ key: k }, session.totals[k]); }).sort(function (a, b) { return b.total - a.total; });
   }
-  function resultsMulti(cfg, players, opts) {
+  // ---------- Big screen during a round (host device not playing) ----------
+  function spectate(board, cfg, players, roundNo, onEnd, onQuit) {
+    var n = board.n;
+    var scr = mount(
+      '<header class="band game-band"><div class="band-row"><b style="color:#FFF;font-size:20px;font-weight:800">Round ' + roundNo + ' · Big screen</b>' +
+      '<button class="icon-btn" data-menu aria-label="Game menu">' + I.menu + '</button></div>' +
+      '<div style="display:flex;gap:10px"><div class="stat"><span class="clock" data-clock>0:00</span><div class="bar"><i data-bar></i></div></div></div></header>' +
+      '<section class="spect-players"><span class="label">Words found so far</span><div class="players">' +
+      players.map(function (p) { return '<div class="prow">' + avatar(p.avatar, 44) + '<b>' + esc(p.name) + '</b><span class="sc" data-cnt="' + esc(p.id) + '">0</span></div>'; }).join('') +
+      '</div></section>' +
+      '<div class="board-wrap" data-wrap><div class="board-panel"><div class="board" data-board style="--n:' + n + '"></div></div></div>', 'game spect');
+    var el = scr.el, boardEl = $('[data-board]', el);
+    board.cells.forEach(function (c, i) {
+      var cell = document.createElement('div');
+      cell.className = 'cell intro';
+      cell.style.animationDelay = ((Math.floor(i / n) + (i % n)) * 0.07) + 's';
+      cell.innerHTML = '<div class="tile' + (c === 'qu' ? ' qu' : '') + '">' + (c === 'qu' ? 'Qu' : c.toUpperCase()) + '</div>';
+      boardEl.appendChild(cell);
+    });
+    function layout() {
+      var wrap = $('[data-wrap]', el), cs = getComputedStyle(wrap);
+      var w = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), h = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      var side = Math.max(180, Math.min(w, h, 820)) - 16, gap = Math.round(side * (n === 4 ? 0.03 : 0.022)), tile = (side - gap * (n - 1)) / n;
+      boardEl.style.width = side + 'px'; boardEl.style.height = side + 'px';
+      boardEl.style.setProperty('--gap', gap + 'px'); boardEl.style.setProperty('--ts', tile + 'px');
+    }
+    window.addEventListener('resize', layout);
+    requestAnimationFrame(layout);
+    var clockEl = $('[data-clock]', el), barEl = $('[data-bar]', el), left = cfg.time * 1000, last = 0, started = false, ended = false;
+    function fmt(ms) { var s = Math.ceil(ms / 1000), m = Math.floor(s / 60); s %= 60; return m + ':' + (s < 10 ? '0' : '') + s; }
+    clockEl.textContent = fmt(left);
+    var timer = setInterval(function () {
+      if (!started || ended) return;
+      var now = Date.now(); left = Math.max(0, left - (now - last)); last = now;
+      clockEl.textContent = fmt(left); barEl.style.transform = 'scaleX(' + (left / (cfg.time * 1000)) + ')';
+      var s = Math.ceil(left / 1000);
+      if (s <= 5 && s > 0 && s !== timer.beep) { timer.beep = s; Snd.tone(1200, 0.06, 'triangle', 0.04); }
+      if (left <= 0) stop(true);
+    }, 200);
+    function stop(fin) {
+      if (ended) return;
+      ended = true; clearInterval(timer); window.removeEventListener('resize', layout);
+      if (fin) { Snd.tone(523, 0.3, 'sine', 0.07); Snd.tone(392, 0.4, 'sine', 0.07, 0.25); setTimeout(onEnd, 900); }
+    }
+    scr.cleanup = function () { stop(false); };
+    $('[data-menu]', el).onclick = function () {
+      confirmBox('Close the game for everyone?', 'Close game', 'Keep going').then(function (y) { if (y) { stop(false); onQuit(); } });
+    };
+    countdown(el).then(function () { started = true; last = Date.now(); });
+    return {
+      setCount: function (id, c) {
+        var e = $('[data-cnt="' + id + '"]', el);
+        if (e && String(c) !== e.textContent) { e.textContent = c; e.classList.remove('bump'); void e.offsetWidth; e.classList.add('bump'); }
+      }
+    };
+  }
+
+  // ---------- Animated round results (shared screen) ----------
+  function animateNum(el, from, to, ms) {
+    if (!el) return;
+    if (from === to) { el.textContent = to; return; }
+    var t0 = performance.now(), lastShown = from;
+    function step(now) {
+      var k = Math.min(1, (now - t0) / ms);
+      var v = Math.round(from + (to - from) * (1 - Math.pow(1 - k, 2)));
+      if (v !== lastShown) { lastShown = v; el.textContent = v; Snd.tally(); }
+      if (k < 1) requestAnimationFrame(step); else el.textContent = to;
+    }
+    requestAnimationFrame(step);
+  }
+  function confetti(host) {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var c = document.createElement('canvas');
+    c.className = 'confetti';
+    host.appendChild(c);
+    var dpr = window.devicePixelRatio || 1, W = host.clientWidth, H = host.clientHeight;
+    c.width = W * dpr; c.height = H * dpr;
+    var ctx = c.getContext('2d'); ctx.scale(dpr, dpr);
+    var cols = ['#F26B21', '#FFC93A', '#86D069', '#2F6FDE', '#F0457A', '#FFF3D9'];
+    var bits = [];
+    for (var i = 0; i < 160; i++) bits.push({ x: W / 2 + (Math.random() - 0.5) * 80, y: H * 0.42, vx: (Math.random() - 0.5) * 14, vy: -Math.random() * 15 - 4, r: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.4, w: 6 + Math.random() * 6, h: 8 + Math.random() * 8, c: cols[i % cols.length] });
+    var t0 = performance.now();
+    function frame(now) {
+      ctx.clearRect(0, 0, W, H);
+      bits.forEach(function (b) {
+        b.vy += 0.35; b.vx *= 0.99; b.x += b.vx; b.y += b.vy; b.r += b.vr;
+        ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r); ctx.fillStyle = b.c; ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); ctx.restore();
+      });
+      if (now - t0 < 3500) requestAnimationFrame(frame); else c.remove();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // players: [{key, id?, name, avatar, words, me?}]
+  // opts: {board, session | totals+round, save, saveMine, actions:[{label, cls, icon, run}], note, readyKeys:[...]}
+  function resultsShow(cfg, players, opts) {
     var scoring = cfg.scoring || 'length';
-    var R = computeRound(players, scoring), rows = R.rows;
-    if (opts.save) rows.forEach(function (r) { addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
-    if (opts.saveMine) rows.forEach(function (r) { if (r.p.me) addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
-    var table = opts.session ? updateSession(opts.session, rows) : (opts.totals || []);
+    var R = computeRound(players, scoring);
+    if (opts.save) R.rows.forEach(function (r) { addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
+    if (opts.saveMine) R.rows.forEach(function (r) { if (r.p.me) addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
+    var table = opts.session ? updateSession(opts.session, R.rows) : (opts.totals || []);
     var round = opts.session ? opts.session.round : (opts.round || 1);
-    function totalFor(p) { var k = p.key || p.id || p.name; var t = table.filter(function (x) { return x.key === k; })[0]; return t ? t.total : null; }
-    var top = rows[0].score, winners = rows.filter(function (r) { return r.score === top; });
-    var title = winners.length > 1 ? 'It’s a tie!' : esc(winners[0].p.name) + ' wins!';
-    // Awards
-    var longLen = Math.max.apply(null, rows.map(function (r) { return r.longest.length; }));
-    var maxUnique = Math.max.apply(null, rows.map(function (r) { return r.uniques; }));
-    function chips(r) {
-      var c = '';
-      if (longLen >= 3 && r.longest.length === longLen) c += '<span class="award">Longest word</span>';
-      if (maxUnique > 0 && r.uniques === maxUnique) c += '<span class="award blue">Most unique</span>';
-      return c;
-    }
-    // Every word submitted, best first
-    var allWords = Object.keys(R.counts).map(function (w) {
-      var base = scoreOf(w, scoring), u = R.unique.has(w);
-      return { w: w, base: base, unique: u, p: u ? base * 2 : base, who: R.finders[w] };
-    }).sort(function (a, b) { return b.p - a.p || b.w.length - a.w.length || (a.w < b.w ? -1 : 1); });
-    // Unfound gems and longest word on the board
-    var gems = [], longestOnBoard = '';
+    var P = players.map(function (p, i) { return { p: p, key: p.key || p.id || p.name, idx: i, score: 0, final: 0, total: 0 }; });
+    R.rows.forEach(function (r) { P.forEach(function (x) { if (x.p === r.p) x.final = r.score; }); });
+    P.forEach(function (x) { var t = table.filter(function (y) { return y.key === x.key; })[0]; x.total = t ? t.total : x.final; x.wins = t ? t.wins : 0; });
+    var words = Object.keys(R.counts).map(function (w) { return { w: w, base: scoreOf(w, scoring), unique: R.unique.has(w), who: R.finders[w] }; });
+    var seq = words.filter(function (x) { return !x.unique; }).sort(function (a, b) { return a.base - b.base; })
+      .concat(words.filter(function (x) { return x.unique; }).sort(function (a, b) { return a.base - b.base || a.w.length - b.w.length; }));
+    var gems = [], longest = '';
     if (opts.board && opts.board.words) {
-      var boardWords = Array.from(opts.board.words.keys());
-      gems = boardWords.filter(function (w) { return !R.counts[w]; }).sort(function (a, b) { return scoreOf(b, scoring) - scoreOf(a, scoring) || b.length - a.length; }).slice(0, 3);
-      longestOnBoard = boardWords.sort(function (a, b) { return b.length - a.length || scoreOf(b, scoring) - scoreOf(a, scoring); })[0] || '';
+      var bw = Array.from(opts.board.words.keys());
+      gems = bw.filter(function (w) { return !R.counts[w]; }).sort(function (a, b) { return scoreOf(b, scoring) - scoreOf(a, scoring) || b.length - a.length; }).slice(0, 3);
+      longest = bw.sort(function (a, b) { return b.length - a.length || scoreOf(b, scoring) - scoreOf(a, scoring); })[0] || '';
     }
-    var html =
-      '<header class="band" style="padding-top:calc(24px + env(safe-area-inset-top));padding-bottom:22px;gap:6px;align-items:center">' +
-      '<div class="eyebrow">Round ' + round + ' results · ' + (scoring === 'rarity' ? 'Rarity scoring' : 'Party') + '</div>' +
-      '<div style="animation:dialogIn .7s .2s cubic-bezier(.3,1.4,.5,1) both">' + avatar(winners[0].p.avatar, 84) + '</div>' +
-      '<div class="total" style="font-size:40px">' + title + '</div>' +
-      '<div class="sub">Words only you found score double</div></header>' +
+    var winners = R.rows.filter(function (r) { return r.score === R.rows[0].score; });
+    var scr = mount(
+      '<header class="band show-band"><div class="band-row"><div class="eyebrow" style="text-align:left">Round ' + round + ' · ' + (scoring === 'rarity' ? 'Rarity scoring' : 'Party') + '</div>' +
+      '<button class="band-btn" data-skip>Skip</button></div>' +
+      '<div class="show-title" data-title>Counting the words…</div>' +
+      '<div class="sub">Shared words score normally. Words only one player found score double.</div></header>' +
+      '<div class="scroll"><div class="show">' +
+      '<section class="show-lb"><span class="label" data-lbtitle>This round</span><div class="lb-stage" data-stage style="height:' + (P.length * 66) + 'px">' +
+      P.map(function (x) {
+        return '<div class="lbs-row" data-row="' + x.idx + '">' + avatar(x.p.avatar, 42) + '<span class="nm"><b>' + esc(x.p.name) + (x.p.me ? ' (you)' : '') + '</b><small data-sub="' + x.idx + '"></small></span>' +
+          '<span class="ready-chip" data-ready="' + x.idx + '" hidden>Ready</span><span class="crown" data-crown="' + x.idx + '" hidden>★</span><span class="sc" data-score="' + x.idx + '">0</span></div>';
+      }).join('') + '</div></section>' +
+      '<section class="show-words"><span class="label">Words</span><div class="stream" data-stream></div><div data-gems></div></section>' +
+      '</div><div class="show-actions" data-actions hidden></div></div>'
+    );
+    var el = scr.el, stream = $('[data-stream]', el), done = false, timers = [];
+    function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+    scr.cleanup = function () { timers.forEach(clearTimeout); };
+    function place(byTotal) {
+      var order = P.slice().sort(function (a, b) { return (byTotal ? b.total - a.total : b.score - a.score) || a.idx - b.idx; });
+      order.forEach(function (x, i) {
+        var row = $('[data-row="' + x.idx + '"]', el);
+        row.style.transform = 'translateY(' + (i * 66) + 'px)';
+        row.classList.toggle('lead', i === 0 && (byTotal ? x.total : x.score) > 0);
+      });
+    }
+    place(false);
+    function wordEl(x, instant) {
+      var d = document.createElement('div');
+      d.className = 'sw' + (instant ? ' settled ' + (x.unique ? 'gold' : 'dup') : ' in');
+      d.innerHTML = '<span class="ww"><b>' + esc(x.w.toUpperCase()) + '</b><span class="who">' + x.who.map(function (p) { return avatar(p.avatar, 22); }).join('') + '<small>' + esc(x.who.map(function (p) { return p.name; }).join(', ')) + '</small></span></span>' +
+        '<span class="tag">' + (x.unique ? 'Unique ×2' : 'Shared') + '</span><span class="pts">' + (x.unique ? x.base + ' × 2 = ' + (x.base * 2) : '+' + x.base) + '</span>' +
+        (x.unique && !instant ? '<span class="sparks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' : '');
+      return d;
+    }
+    function award(x) {
+      x.who.forEach(function (p) {
+        var t = P.filter(function (y) { return y.p === p; })[0];
+        var old = t.score; t.score += x.unique ? x.base * 2 : x.base;
+        animateNum($('[data-score="' + t.idx + '"]', el), old, t.score, 450);
+      });
+      place(false);
+    }
+    var gap = Math.max(300, Math.min(800, 16000 / Math.max(1, seq.length)));
+    seq.forEach(function (x, i) {
+      later(function () {
+        var d = wordEl(x, false);
+        stream.insertBefore(d, stream.firstChild);
+        later(function () {
+          d.classList.remove('in'); d.classList.add(x.unique ? 'gold' : 'dup');
+          if (x.unique) { Snd.tone(1318, 0.12, 'sine', 0.06); Snd.tone(1760, 0.18, 'sine', 0.05, 0.08); } else Snd.tone(220, 0.14, 'square', 0.025);
+          award(x);
+        }, Math.min(450, gap * 0.6));
+      }, 700 + i * gap);
+    });
+    var tEnd = 700 + seq.length * gap + 600;
+    function showGems(animated) {
+      if (!gems.length && !longest) return;
+      var g = $('[data-gems]', el);
+      g.innerHTML = '<div class="card gems' + (animated ? ' pop-in' : '') + '"><div class="missed">Missed opportunity!</div>' +
+        (longest ? '<div class="gem-long"><small>Longest word on the board</small><b>' + esc(longest.toUpperCase()) + '</b><span>' + longest.length + ' letters · ' + plural(scoreOf(longest, scoring), 'point', 'points') +
+          (R.counts[longest] ? ' · found by ' + esc(R.finders[longest].map(function (p) { return p.name; }).join(', ')) : ' · nobody found it') + '</span></div>' : '') +
+        gems.map(function (w, i) { return '<div class="gem" style="animation-delay:' + (animated ? 0.4 + i * 0.25 : 0) + 's"><b>' + esc(w.toUpperCase()) + '</b><span class="pts">' + plural(scoreOf(w, scoring), 'pt', 'pts') + '</span></div>'; }).join('') + '</div>';
+      if (animated) { Snd.tone(392, 0.2, 'triangle', 0.05); Snd.tone(330, 0.3, 'triangle', 0.05, 0.18); }
+    }
+    function title() {
+      var t = $('[data-title]', el);
+      t.textContent = winners.length > 1 ? 'It’s a tie!' : winners[0].p.name + ' wins round ' + round + '!';
+      t.classList.add('pop-in');
+    }
+    function celebrate(next) {
+      var w = winners[0];
+      var o = document.createElement('div');
+      o.className = 'overlay center winner-stage';
+      o.innerHTML = '<div class="winner-card"><div class="winner-av">' + avatar(w.p.avatar, 150) + '</div><div class="winner-name">' + (winners.length > 1 ? 'It’s a tie!' : esc(w.p.name) + ' wins!') + '</div><div class="winner-pts">' + plural(w.score, 'point', 'points') + ' this round</div><p class="hint-text" style="color:#FFF3D9">Tap to continue</p></div>';
+      el.appendChild(o);
+      confetti(o); Snd.cheer();
+      var gone = false;
+      function close() { if (gone) return; gone = true; o.classList.add('leaving-ov'); setTimeout(function () { o.remove(); next(); }, 350); }
+      o.onclick = close; later(close, 3600);
+    }
+    function standingsView(animated) {
+      $('[data-lbtitle]', el).textContent = table.length ? 'Overall after ' + plural(round, 'round', 'rounds') : 'This round';
+      P.forEach(function (x) {
+        var sc = $('[data-score="' + x.idx + '"]', el);
+        if (animated) animateNum(sc, x.final, x.total, 900); else sc.textContent = x.total;
+        $('[data-sub="' + x.idx + '"]', el).textContent = '+' + x.final + ' this round · ' + plural(x.wins, 'win', 'wins');
+      });
+      place(true);
+      var lead = P.slice().sort(function (a, b) { return b.total - a.total || a.idx - b.idx; })[0];
+      if (lead && lead.total > 0) $('[data-crown="' + lead.idx + '"]', el).hidden = false;
+    }
+    function finish() {
+      if (done) return;
+      done = true;
+      var sk = $('[data-skip]', el); if (sk) sk.remove();
+      var a = $('[data-actions]', el);
+      a.innerHTML = (opts.note ? '<p class="hint-text" style="text-align:center">' + esc(opts.note) + '</p>' : '') +
+        (opts.actions || []).map(function (x, i) { return '<button class="btn ' + (x.cls || 'btn-white') + '" data-act="' + i + '">' + (x.icon || '') + esc(x.label) + '</button>'; }).join('');
+      a.hidden = false; a.classList.add('pop-in');
+      on(a, '[data-act]', 'click', function (e) { var x = opts.actions[+e.currentTarget.getAttribute('data-act')]; x.run(); });
+    }
+    later(function () { showGems(true); }, tEnd);
+    later(function () { title(); celebrate(function () { standingsView(true); later(finish, 1000); }); }, tEnd + 2200);
+    $('[data-skip]', el).onclick = function () {
+      timers.forEach(clearTimeout); timers = [];
+      $$('.winner-stage', el).forEach(function (n) { n.remove(); });
+      stream.innerHTML = '';
+      seq.slice().reverse().forEach(function (x) { stream.appendChild(wordEl(x, true)); });
+      P.forEach(function (x) { x.score = x.final; });
+      showGems(false); title(); standingsView(false); finish();
+    };
+    return {
+      el: el,
+      setReady: function (key) {
+        P.forEach(function (x) { if (x.key === key) { var c = $('[data-ready="' + x.idx + '"]', el); if (c) c.hidden = false; } });
+        if (opts.onReadyChange) opts.onReadyChange();
+      },
+      round: round, table: table
+    };
+  }
+
+  // A player's own summary on their phone while the big reveal plays on the host screen.
+  function resultsPersonal(cfg, players, opts) {
+    var scoring = cfg.scoring || 'length';
+    var R = computeRound(players, scoring);
+    if (opts.saveMine) R.rows.forEach(function (r) { if (r.p.me) addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
+    var mineIdx = -1;
+    R.rows.forEach(function (r, i) { if (r.p.me) mineIdx = i; });
+    var mine = R.rows[mineIdx] || { list: [], score: 0, p: S.profile };
+    var table = opts.totals || [];
+    var myKey = mine.p.key || mine.p.id;
+    var overallRank = 0, myTotal = mine.score;
+    table.forEach(function (t, i) { if (t.key === myKey) { overallRank = i + 1; myTotal = t.total; } });
+    var uniq = mine.list.filter(function (x) { return x.unique; }), dup = mine.list.filter(function (x) { return !x.unique; });
+    function rowsHtml(list, kind) {
+      return list.length ? list.map(function (x, i) {
+        return '<div class="wrow ' + kind + '" style="animation-delay:' + (0.4 + i * 0.12) + 's"><b>' + esc(x.w.toUpperCase()) + '</b><span class="pts">' + (kind === 'unique' ? (x.p / 2) + ' × 2 = ' + x.p : '+' + x.p) + '</span></div>';
+      }).join('') : '<p class="empty" style="padding:8px">None this round.</p>';
+    }
+    var scr = mount(
+      '<header class="band" style="padding-top:calc(22px + env(safe-area-inset-top));gap:6px;align-items:center">' +
+      '<div class="eyebrow">Round ' + (opts.round || 1) + ' · your results</div>' +
+      '<div class="total" data-total>0</div>' +
+      '<div class="sub">#' + (mineIdx + 1) + ' of ' + R.rows.length + ' this round' + (overallRank ? ' · total ' + myTotal + ' (#' + overallRank + ' overall)' : '') + '</div></header>' +
       '<div class="scroll">' +
-      '<span class="label">Round leaderboard</span><div class="players">' +
-      rows.map(function (r, i) {
-        var tot = totalFor(r.p);
-        return '<div class="rank' + (r.score === top ? ' first' : '') + '" style="animation-delay:' + (0.3 + i * 0.18) + 's"><span class="pos">' + (i + 1) + '</span>' + avatar(r.p.avatar, 44) +
-          '<span class="nm"><b>' + esc(r.p.name) + (r.p.me ? ' (you)' : '') + '</b><small>' + plural(r.list.length, 'word', 'words') + ' · ' + r.uniques + ' unique' + (r.longest ? ' · longest ' + esc(r.longest.toUpperCase()) : '') + '</small>' +
-          '<span class="awards">' + chips(r) + '</span></span>' +
-          '<span class="scs"><span class="sc" data-sc="' + i + '">0</span>' + (tot !== null ? '<small>Total ' + tot + '</small>' : '') + '</span></div>';
-      }).join('') + '</div>';
-    if (table.length) {
-      html += '<span class="label">Overall standings · after ' + plural(round, 'round', 'rounds') + '</span><div class="card standings">' +
-        table.map(function (t, i) {
-          return '<div class="st-row' + (i === 0 && t.total > 0 ? ' lead' : '') + '"><span class="pos">' + (i + 1) + '</span>' + avatar(t.avatar, 32) + '<b>' + esc(t.name) + '</b><small>' + plural(t.wins, 'win', 'wins') + '</small><span class="sc">' + t.total + '</span></div>';
-        }).join('') + '</div>';
-    }
-    html += '<span class="label">Every word this round</span>' +
-      (allWords.length ? '<div class="players">' + allWords.map(function (x, i) {
-        return '<div class="wrow' + (x.unique ? ' unique' : ' shared') + '" style="animation-delay:' + (0.6 + Math.min(i, 20) * 0.08) + 's">' +
-          '<span class="ww"><b>' + esc(x.w.toUpperCase()) + '</b><span class="who">' + x.who.map(function (p) { return avatar(p.avatar, 22); }).join('') +
-          '<small>' + esc(x.who.map(function (p) { return p.name; }).join(', ')) + '</small></span></span>' +
-          '<span class="tag">' + (x.unique ? 'Unique ×2' : 'Shared') + '</span>' +
-          '<span class="pts">' + (x.unique ? x.base + ' × 2 = ' + x.p : '+' + x.p) + '</span></div>';
-      }).join('') + '</div>' : '<p class="empty">Nobody found a word this round.</p>');
-    if (gems.length || longestOnBoard) {
-      html += '<span class="label">Unfound gems</span><div class="card gems">' +
-        (longestOnBoard ? '<div class="gem-long"><small>Longest word on the board</small><b>' + esc(longestOnBoard.toUpperCase()) + '</b><span>' + longestOnBoard.length + ' letters · ' + plural(scoreOf(longestOnBoard, scoring), 'point', 'points') +
-          (R.counts[longestOnBoard] ? ' · found by ' + esc(R.finders[longestOnBoard].map(function (p) { return p.name; }).join(', ')) : ' · nobody found it') + '</span></div>' : '') +
-        gems.map(function (w) { return '<div class="gem"><b>' + esc(w.toUpperCase()) + '</b><span class="pts">' + plural(scoreOf(w, scoring), 'pt', 'pts') + '</span></div>'; }).join('') + '</div>';
-    }
-    html += '<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">' +
-      (opts.again ? '<button class="btn btn-blue" data-again>' + I.play + (opts.againLabel || 'Play again') + '</button>' : '') +
-      (opts.note ? '<p class="hint-text" style="text-align:center">' + esc(opts.note) + '</p>' : '') +
-      '<button class="btn btn-white" data-home>' + (opts.homeLabel || 'Home') + '</button></div></div>';
-    var scr = mount(html);
-    var el = scr.el;
-    rows.forEach(function (r, i) { setTimeout(function () { tallyUp($('[data-sc="' + i + '"]', el), r.score); }, 600 + i * 250); });
-    setTimeout(function () { Snd.cheer(); }, 900);
-    if (opts.again) $('[data-again]', el).onclick = opts.again;
-    $('[data-home]', el).onclick = opts.home || home;
-    return { scr: scr, table: table, round: round };
+      '<button class="btn ready-btn" data-ready>' + I.play + 'Ready for next round</button>' +
+      '<span class="label">Unique words · double points</span><div class="players">' + rowsHtml(uniq, 'unique') + '</div>' +
+      '<span class="label">Shared words · normal points</span><div class="players">' + rowsHtml(dup, 'shared') + '</div>' +
+      '<p class="hint-text" style="text-align:center">Watch the host’s screen for the full results.</p>' +
+      '<button class="btn btn-white" data-leave>Leave game</button></div>'
+    );
+    setTimeout(function () { tallyUp($('[data-total]', scr.el), mine.score); }, 400);
+    var rb = $('[data-ready]', scr.el);
+    rb.onclick = function () {
+      if (rb.classList.contains('done')) return;
+      rb.classList.add('done'); rb.innerHTML = '✓ Ready! Waiting for the host…';
+      buzz(30); Snd.good(3);
+      opts.onReady();
+    };
+    $('[data-leave]', scr.el).onclick = opts.onLeave;
+    return scr;
   }
 
   // ---------- Leaderboards ----------
@@ -1102,11 +1311,12 @@
     var pending = null, busy = false, inGame = false, closed = false, gen = 0, guestSeq = 0;
     var round = null;
     var session = { round: 0, totals: {} };
-    function players() { return [me].concat(guests.map(function (g) { return { id: g.id, key: 'd:' + (g.did || g.id), name: g.name, avatar: g.avatar }; })); }
+    var spectator = null, resultsApi = null;
+    function players() { return (cfg.screenOnly ? [] : [me]).concat(guests.map(function (g) { return { id: g.id, key: 'd:' + (g.did || g.id), name: g.name, avatar: g.avatar }; })); }
     function broadcast(msg) { guests.forEach(function (g) { send(g.dc, msg); }); }
     function lobbyMsg() { return { t: 'lobby', players: players(), mode: cfg.mode, n: cfg.n, minLen: cfg.minLen }; }
     function teardown() {
-      closed = true;
+      closed = true; stopCam();
       broadcast({ t: 'bye' });
       guests.forEach(function (g) { try { g.pc.close(); } catch (e) {} });
       if (pending) try { pending.pc.close(); } catch (e) {}
@@ -1137,6 +1347,10 @@
             broadcast(lobbyMsg());
             if (!inGame) newOffer();
           }
+        } else if (m.t === 'count') {
+          if (spectator) spectator.setCount(g.id, +m.n || 0);
+        } else if (m.t === 'ready') {
+          if (resultsApi) resultsApi.setReady('d:' + (g.did || g.id));
         } else if (m.t === 'done' && round) {
           round.done[g.id] = Array.isArray(m.words) ? m.words.slice(0, 2000).map(String) : [];
           round.check();
@@ -1163,11 +1377,30 @@
       }
     }
     var scr = null;
+    // The host's front camera watches for a joiner's reply code, so the host doesn't need to tap anything.
+    var cam = { box: null, ctl: null, running: false };
+    function camBox() {
+      if (!cam.box) {
+        cam.box = document.createElement('div');
+        cam.box.className = 'selfie-cam';
+        cam.box.innerHTML = '<video aria-label="Front camera view" muted playsinline></video><span>Front camera</span>';
+      }
+      return cam.box;
+    }
+    function startCam() {
+      if (cam.running || closed || inGame) return;
+      cam.running = true;
+      WMNet.startScanner($('video', camBox()), function (code) { cam.running = false; buzz(40); Snd.tone(1046, 0.1, 'sine', 0.06); accept(code); },
+        function () { cam.running = false; cam.failed = true; render(); }, { facing: 'user', interval: 200 }).then(function (c) {
+          cam.ctl = c; if (!cam.running) c.stop();
+        });
+    }
+    function stopCam() { cam.running = false; if (cam.ctl) { cam.ctl.stop(); cam.ctl = null; } }
     function render() {
-      if (inGame || closed) return;
+      if (inGame || closed) { stopCam(); return; }
       if (!scr || !scr.el.isConnected) {
         scr = mount(backBand('Host a game') + '<div class="scroll" data-body></div>');
-        scr.cleanup = function () {};
+        scr.cleanup = function () { stopCam(); };
         on(scr.el, '[data-back]', 'click', function () {
           confirmBox('Close this game?', 'Close game', 'Stay').then(function (y) { if (y) { teardown(); nearby(); } });
         });
@@ -1175,30 +1408,37 @@
       var body = $('[data-body]', scr.el);
       var list = players();
       var html = '<div class="card"><span class="label">' + MODES[cfg.mode].name + ' · ' + cfg.n + ' × ' + cfg.n + ' · Players ' + list.length + ' of ' + MAX_PLAYERS + '</span><div class="players">' +
-        list.map(function (p) { return '<div class="prow">' + avatar(p.avatar, 44) + '<b>' + esc(p.name) + '</b><span class="tag">' + (p.id === 'h' ? 'Host' : 'Joined') + '</span></div>'; }).join('') + '</div></div>';
+        list.map(function (p) { return '<div class="prow">' + avatar(p.avatar, 44) + '<b>' + esc(p.name) + '</b><span class="tag">' + (p.id === 'h' ? 'Host' : 'Joined') + '</span></div>'; }).join('') +
+        (cfg.screenOnly ? '<p class="hint-text">This device is the big screen and doesn\u2019t play.' + (list.length ? '' : ' Waiting for players to join.') + '</p>' : '') + '</div></div>';
       if (guests.length < MAX_PLAYERS - 1) {
         html += '<div class="card" style="align-items:stretch"><b style="font-size:18px">Add a player</b>';
         if (busy) html += '<div class="status"><span class="spinner"></span>Connecting…</div>';
         else if (!pending) html += '<div class="status"><span class="spinner"></span>Making a code…</div>';
-        else html += '<p class="hint-text">1. Your friend taps <b>Join a game</b> and scans this.</p>' + qrHtml() +
-          '<p class="hint-text">2. Then scan the code that appears on their phone.</p>' +
-          '<button class="btn btn-blue" data-scan>' + I.camera + 'Scan their reply</button>' +
-          '<button class="btn btn-ghost" data-text>Can’t scan? Use a text code</button>';
+        else html += '<p class="hint-text"><b>1.</b> Your friend taps <b>Party mode</b> \u2192 <b>Phone to phone</b> \u2192 <b>Join a game</b> and scans this code.</p>' + qrHtml() +
+          '<p class="hint-text"><b>2.</b> They turn their phone around and hold their screen up to this screen. ' + (cam.failed ? 'The front camera isn\u2019t available, so tap the button below to scan their code instead.' : 'Your front camera picks it up automatically.') + '</p>' +
+          (cam.failed ? '' : '<div data-cam></div>') +
+          '<button class="btn btn-white" data-scan>' + I.camera + 'Scan with the back camera instead</button>' +
+          '<button class="btn btn-ghost" data-text>Can\u2019t scan? Use a text code</button>';
         html += '</div>';
       }
       html += '<button class="btn btn-orange" data-start ' + (guests.length ? '' : 'disabled') + '>' + I.play + 'Start game</button>';
       if (!guests.length) html += '<p class="hint-text" style="text-align:center">Waiting for at least one friend to join.</p>';
+      if (cam.box && cam.box.parentNode) cam.box.parentNode.removeChild(cam.box);
       body.innerHTML = html;
+      if (!(pending && !busy)) stopCam();
       if (pending && !busy) {
         drawQr(body, pending.code);
-        $('[data-scan]', body).onclick = function () { openScanner('Point at the code on your friend’s phone', accept); };
+        var slot = $('[data-cam]', body);
+        if (slot) { slot.appendChild(camBox()); startCam(); } else stopCam();
+        $('[data-scan]', body).onclick = function () { stopCam(); openScanner('Point at the code on your friend\u2019s phone', accept); };
         $('[data-text]', body).onclick = function () { codeFallback(pending.code, accept, 'Their reply code'); };
       }
       var st = $('[data-start]', body);
       if (st) st.onclick = startRound;
     }
     function accept(code) {
-      if (!pending) return;
+      if (!pending || busy) return;
+      stopCam();
       busy = true; render();
       var p = pending;
       WMNet.acceptAnswer(p.pc, code).then(function () {
@@ -1211,41 +1451,49 @@
     }
     function startRound() {
       if (!guests.length) return;
-      gen++;
+      gen++; stopCam();
       if (pending && !busy) { try { pending.pc.close(); } catch (e) {} pending = null; }
-      inGame = true;
+      inGame = true; resultsApi = null;
       var board = makeBoard(cfg.n, cfg.minLen, cfg.seed);
       var everyone = players();
-      round = { done: {}, finished: false, myWords: null, timer: null, board: board };
+      round = { done: {}, finished: false, myWords: cfg.screenOnly ? [] : null, timer: null, board: board };
       round.check = function () {
         if (round.finished || !round.myWords) return;
         var waiting = guests.filter(function (g) { return !round.done[g.id]; });
         if (waiting.length && !round.timeoutHit) return;
         round.finished = true; clearTimeout(round.timer);
+        spectator = null;
         var res = everyone.filter(function (p) { return p.id === 'h' || round.done[p.id] || guests.some(function (g) { return g.id === p.id; }); }).map(function (p) {
           return { id: p.id, key: p.key, name: p.name, avatar: p.avatar, words: p.id === 'h' ? round.myWords : (round.done[p.id] || []) };
         });
         var mine = res.map(function (r) { return Object.assign({}, r, { me: r.id === 'h' }); });
         inGame = false;
-        var out = resultsMulti(cfg, mine, {
-          board: round.board, session: session, saveMine: true, againLabel: 'Next round (back to lobby)',
-          again: function () { round = null; broadcast(lobbyMsg()); scr = null; newOffer(); },
-          homeLabel: 'Close game', home: function () { teardown(); home(); }
+        resultsApi = resultsShow(cfg, mine, {
+          board: round.board, session: session, saveMine: !cfg.screenOnly,
+          note: 'Players tap Ready on their phones. You can start whenever you like.',
+          actions: [
+            { label: 'Start next round', cls: 'btn-blue', icon: I.play, run: function () { if (!guests.length) { toast('Everyone has left. Go back to the lobby to add players.'); return; } startRound(); } },
+            { label: 'Back to lobby to add players', run: function () { resultsApi = null; round = null; broadcast(lobbyMsg()); scr = null; newOffer(); } },
+            { label: 'Close game', run: function () { teardown(); home(); } }
+          ]
         });
-        broadcast({ t: 'results', players: res, mode: cfg.mode, n: cfg.n, minLen: cfg.minLen, scoring: cfg.scoring, round: out.round, totals: out.table });
+        broadcast({ t: 'results', players: res, mode: cfg.mode, n: cfg.n, minLen: cfg.minLen, scoring: cfg.scoring, round: resultsApi.round, totals: resultsApi.table });
       };
       broadcast({ t: 'start', cells: board.cells, n: cfg.n, minLen: cfg.minLen, mode: cfg.mode, time: cfg.time, scoring: cfg.scoring, players: everyone });
-      var g = playBoard({
+      function collecting() {
+        mount('<div class="loading"><span class="spinner" style="width:40px;height:40px;border-width:5px"></span><p>Collecting everyone’s words…</p></div>');
+        round.timer = setTimeout(function () { round.timeoutHit = true; round.check(); }, 8000);
+        round.check();
+      }
+      if (cfg.screenOnly) {
+        spectator = spectate(board, cfg, everyone, session.round + 1, function () { collecting(); }, function () { teardown(); home(); });
+        return;
+      }
+      playBoard({
         board: board, cfg: cfg, player: me, multiplayer: true,
-        onEnd: function (r) {
-          round.myWords = r.words;
-          mount('<div class="loading"><span class="spinner" style="width:40px;height:40px;border-width:5px"></span><p>Collecting everyone’s words…</p></div>');
-          round.timer = setTimeout(function () { round.timeoutHit = true; round.check(); }, 8000);
-          round.check();
-        },
+        onEnd: function (r) { round.myWords = r.words; collecting(); },
         onQuit: function () { teardown(); home(); }
       });
-
     }
     WMNet.primeCamera().then(newOffer);
     render();
@@ -1270,7 +1518,7 @@
       WMNet.answerOffer(code).then(function (l) {
         if (closed) { l.pc.close(); return; }
         link = l;
-        body.innerHTML = '<div class="card" style="align-items:stretch"><b style="font-size:18px">Show this to the host</b><p class="hint-text">The host taps <b>Scan their reply</b> and points their phone at this code.</p>' + qrHtml() +
+        body.innerHTML = '<div class="card" style="align-items:stretch"><b style="font-size:18px">Now show this to the host</b><p class="hint-text">Turn your phone around and hold this code up to the host\u2019s screen, about a hand\u2019s width away. Their front camera reads it by itself. Turn your brightness up if it\u2019s slow.</p>' + qrHtml() +
           '<div class="status"><span class="spinner"></span>Waiting for the host…</div><button class="btn btn-ghost" data-text>Can’t scan? Use a text code</button></div>';
         drawQr(body, l.code);
         $('[data-text]', body).onclick = function () { codeFallback(l.code, null); };
@@ -1306,6 +1554,7 @@
         lastBoard = board;
         game = playBoard({
           board: board, cfg: cfg, player: S.profile, multiplayer: true,
+          onWord: function (n) { send(dc, { t: 'count', n: n }); },
           onEnd: function (r) {
             send(dc, { t: 'done', words: r.words });
             mount('<div class="loading"><span class="spinner" style="width:40px;height:40px;border-width:5px"></span><p>Waiting for everyone’s words…</p></div>');
@@ -1318,7 +1567,9 @@
         var players = (m.players || []).map(function (p) { return { id: p.id, key: p.key, name: String(p.name).slice(0, 14), avatar: p.avatar, words: (p.words || []).map(String), me: p.id === myId }; });
         var cfg2 = { mode: m.mode, n: m.n, minLen: m.minLen, scoring: m.scoring || 'length', time: MODES[m.mode] ? MODES[m.mode].time : 0 };
         setTimeout(function () {
-          resultsMulti(cfg2, players, { board: lastBoard, totals: m.totals || [], round: m.round || 1, saveMine: true, note: 'The host can start another round.', homeLabel: 'Leave game', home: function () { leave(); home(); } });
+          resultsPersonal(cfg2, players, { totals: m.totals || [], round: m.round || 1, saveMine: true,
+            onReady: function () { send(dc, { t: 'ready' }); },
+            onLeave: function () { confirmBox('Leave this game?', 'Leave', 'Stay').then(function (y) { if (y) { leave(); home(); } }); } });
         }, game && !game.isEnded() ? 1200 : 0);
       } else if (m.t === 'bye') {
         closed = true; toast('The host closed the game'); home();

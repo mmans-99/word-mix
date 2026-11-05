@@ -102,7 +102,8 @@
   }
 
   // Opens the camera inside `host` and calls onCode(text) when a Word Mix code is seen.
-  async function startScanner(video, onCode, onError) {
+  async function startScanner(video, onCode, onError, opts) {
+    opts = opts || {};
     var stopped = false, stream = null, timer = null;
     var detector = null;
     try {
@@ -116,7 +117,7 @@
       try { decode = await loadJsQR(); } catch (e) { onError(e); return { stop: function () {} }; }
     }
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: opts.facing || 'environment', width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false });
     } catch (e) {
       onError(new Error('Camera access was blocked. Allow the camera for this site, or use the text code.'));
       return { stop: function () {} };
@@ -146,7 +147,7 @@
           if (text) { api.stop(); onCode(text); return; }
         }
       } catch (e) {}
-      timer = setTimeout(tick, 160);
+      timer = setTimeout(tick, opts.interval || 160);
     }
     var api = {
       stop: function () {
