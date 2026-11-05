@@ -235,6 +235,7 @@
     if (current && current.cleanup) { try { current.cleanup(); } catch (e) {} }
     var old = $$('.screen', app).filter(function (s) { return !s.classList.contains('leaving'); });
     old.forEach(function (s) { s.classList.add('leaving'); setTimeout(function () { s.remove(); }, 280); });
+    window.WM_AT_HOME = false;
     var el = document.createElement('section');
     el.className = 'screen' + (cls ? ' ' + cls : '');
     el.innerHTML = html;
@@ -312,6 +313,7 @@
   // ---------- Home ----------
   function home() {
     if (!S.profile) return editMyProfile(home);
+    if (window.WM_PENDING_RELOAD) { location.reload(); return; }
     var today = S.daily[todayKey()];
     var scr = mount(
       '<header class="band" style="padding-bottom:24px">' +
@@ -332,6 +334,7 @@
     $('[data-profile]', el).onclick = function () { editMyProfile(home); };
     $('[data-settings]', el).onclick = function () { settings(home); };
     $('[data-boards]', el).onclick = function () { leaderboards(home); };
+    window.WM_AT_HOME = true;
     on(el, '[data-go]', 'click', function (e) {
       var go = e.currentTarget.getAttribute('data-go');
       if (go === 'solo') setup('solo');

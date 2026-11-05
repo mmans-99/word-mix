@@ -27,7 +27,19 @@
 <script src="app.js"></script>
 <script>
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+    // When a newer version has been saved, reload once so it shows straight away.
+    var hadController = !!navigator.serviceWorker.controller, reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController || reloading) return;
+      // Never interrupt a game: wait until the player is back on the home screen.
+      if (window.WM_AT_HOME) { reloading = true; location.reload(); } else window.WM_PENDING_RELOAD = true;
+    });
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) { reg.update(); }).catch(function () {});
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && navigator.serviceWorker.getRegistration) navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); });
+    });
   }
 </script>
 </body>
