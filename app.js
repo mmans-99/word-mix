@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 19;
+  var APP_VERSION = 20;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   function $(sel, el) { return (el || document).querySelector(sel); }
@@ -237,6 +237,82 @@
     save();
     return score > prevBest && score > 0;
   }
+
+  // ---------- Word definitions ----------
+  // Looked up from the free Wiktionary-based dictionary when online; saved so they work offline later.
+  var DEF_KEY = 'wordmix.defs';
+  function defCache() { try { return JSON.parse(localStorage.getItem(DEF_KEY)) || {}; } catch (e) { return {}; } }
+  function saveDef(w, d) {
+    var c = defCache(); c[w] = d;
+    var keys = Object.keys(c);
+    if (keys.length > 400) keys.slice(0, keys.length - 400).forEach(function (k) { delete c[k]; });
+    try { localStorage.setItem(DEF_KEY, JSON.stringify(c)); } catch (e) {}
+  }
+  function baseForms(w) {
+    var f = [w];
+    if (/ies$/.test(w)) f.push(w.slice(0, -3) + 'y');
+    if (/es$/.test(w)) f.push(w.slice(0, -2));
+    if (/s$/.test(w) && !/ss$/.test(w)) f.push(w.slice(0, -1));
+    if (/ied$/.test(w)) f.push(w.slice(0, -3) + 'y');
+    if (/ed$/.test(w)) { f.push(w.slice(0, -2)); f.push(w.slice(0, -1)); if (/(.)\1ed$/.test(w)) f.push(w.slice(0, -3)); }
+    if (/ing$/.test(w)) { f.push(w.slice(0, -3)); f.push(w.slice(0, -3) + 'e'); if (/(.)\1ing$/.test(w)) f.push(w.slice(0, -4)); }
+    if (/er$/.test(w)) { f.push(w.slice(0, -2)); f.push(w.slice(0, -1)); }
+    if (/est$/.test(w)) { f.push(w.slice(0, -3)); f.push(w.slice(0, -2)); }
+    if (/ly$/.test(w)) f.push(w.slice(0, -2));
+    if (/is(e|ed|es|ing|ation)$/.test(w)) f.push(w.replace(/is(e|ed|es|ing|ation)$/, 'iz$1'));
+    if (/our/.test(w)) f.push(w.replace('our', 'or'));
+    return f.filter(function (x, i) { return x.length >= 2 && f.indexOf(x) === i; });
+  }
+  function lookup(w) {
+    var forms = baseForms(w), i = 0;
+    function next() {
+      if (i >= forms.length) return Promise.resolve(null);
+      var f = forms[i++];
+      return fetch('https://api.dictionaryapi.dev/api/v2/entries/en/' + encodeURIComponent(f)).then(function (r) {
+        if (r.status === 404) return next();
+        if (!r.ok) throw new Error('lookup');
+        return r.json().then(function (data) {
+          var senses = [];
+          (data || []).forEach(function (entry) {
+            (entry.meanings || []).forEach(function (m) {
+              (m.definitions || []).slice(0, 2).forEach(function (d) { if (senses.length < 4) senses.push({ pos: m.partOfSpeech || '', text: d.definition || '', ex: d.example || '' }); });
+            });
+          });
+          return senses.length ? { base: f, senses: senses } : next();
+        });
+      });
+    }
+    return next();
+  }
+  function showDefinition(w) {
+    var o = document.createElement('div');
+    o.className = 'overlay';
+    o.innerHTML = '<div class="sheet def-sheet" role="dialog" aria-modal="true" aria-label="Definition of ' + esc(w) + '"><div class="def-head"><h2 class="title">' + esc(w.toUpperCase()) + '</h2><span class="pts">' + plural(pts(w.length), 'pt', 'pts') + '</span></div><div data-defbody><div class="status"><span class="spinner"></span>Looking it up\u2026</div></div><button class="btn btn-white" data-close>Close</button></div>';
+    app.appendChild(o);
+    function close() { o.remove(); }
+    $('[data-close]', o).onclick = close;
+    o.addEventListener('click', function (e) { if (e.target === o) close(); });
+    var body = $('[data-defbody]', o);
+    function render(d) {
+      if (!d) { body.innerHTML = '<p class="hint-text">No definition found for this word. It\u2019s in Word Mix\u2019s word list, but the online dictionary doesn\u2019t have an entry for it.</p>'; return; }
+      body.innerHTML = (d.base !== w ? '<p class="hint-text">From <b>' + esc(d.base) + '</b></p>' : '') +
+        '<ol class="defs">' + d.senses.map(function (x) { return '<li><span class="pos">' + esc(x.pos) + '</span> ' + esc(x.text) + (x.ex ? '<em>\u201c' + esc(x.ex) + '\u201d</em>' : '') + '</li>'; }).join('') + '</ol>' +
+        '<p class="hint-text def-src">Definitions from Wiktionary via the Free Dictionary API.</p>';
+    }
+    var cached = defCache()[w];
+    if (cached !== undefined) { render(cached); return; }
+    if (navigator.onLine === false) { body.innerHTML = '<p class="hint-text">Definitions need the internet the first time. Once you\u2019ve looked a word up, it works offline too.</p>'; return; }
+    lookup(w).then(function (d) { saveDef(w, d); if (o.isConnected) render(d); }, function () {
+      if (o.isConnected) body.innerHTML = '<p class="hint-text">Couldn\u2019t reach the dictionary. Definitions need the internet the first time you look a word up.</p>';
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest && e.target.closest('[data-def]');
+    if (t && !e.target.closest('.board')) showDefinition(t.getAttribute('data-def'));
+  });
+  document.addEventListener('keydown', function (e) {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.getAttribute && e.target.getAttribute('data-def')) { e.preventDefault(); showDefinition(e.target.getAttribute('data-def')); }
+  });
 
   // ---------- Keep the screen awake during play and nearby setup ----------
   var wake = { lock: null, want: false };
@@ -817,7 +893,7 @@
     if (!list.length) return '<p class="empty">No words this round.</p>';
     return list.map(function (x, i) {
       var tag = x.unique ? '<span class="tag">Only you ×2</span>' : x.shared ? '<span class="tag">Shared</span>' : '';
-      return '<div class="wrow' + (x.unique ? ' unique' : '') + '" style="animation-delay:' + ((baseDelay || 0) + i * 0.15) + 's"><b>' + esc(x.w.toUpperCase()) + '</b>' + tag + '<span class="pts">' + x.p + (x.p === 1 ? ' pt' : ' pts') + '</span></div>';
+      return '<div class="wrow' + (x.unique ? ' unique' : '') + '" data-def="' + esc(x.w) + '" role="button" tabindex="0" style="animation-delay:' + ((baseDelay || 0) + i * 0.15) + 's"><b>' + esc(x.w.toUpperCase()) + '</b>' + tag + '<span class="pts">' + x.p + (x.p === 1 ? ' pt' : ' pts') + '</span></div>';
     }).join('');
   }
   function fmtTime(ms) { var s = Math.round(ms / 1000), m = Math.floor(s / 60); s %= 60; return m + ':' + (s < 10 ? '0' : '') + s; }
@@ -833,7 +909,7 @@
       '<div class="eyebrow">' + eyebrow + ' · ' + MODES[cfg.mode].name + '</div>' +
       '<div class="total" data-total>0</div>' +
       '<div class="sub">' + sub + '</div>' + badge + '</header>' +
-      '<div class="scroll"><span class="label">Your words</span>' + wordRows(list, 0.5) +
+      '<div class="scroll"><span class="label">Your words \u00b7 tap one to see what it means</span>' + wordRows(list, 0.5) +
       '<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">' +
       (cfg.mode === 'daily' ? '<button class="btn btn-blue" data-boards>' + I.trophy + 'Daily leaderboard</button>' : '<button class="btn btn-blue" data-again>' + I.play + 'Play again</button>') +
       '<button class="btn btn-white" data-home>Home</button></div></div>'
@@ -1037,7 +1113,7 @@
         return '<div class="lbs-row" data-row="' + x.idx + '">' + avatar(x.p.avatar, 42) + '<span class="nm"><b>' + esc(x.p.name) + (x.p.me ? ' (you)' : '') + '</b><small data-sub="' + x.idx + '"></small></span>' +
           '<span class="ready-chip" data-ready="' + x.idx + '" hidden>Ready</span><span class="crown" data-crown="' + x.idx + '" hidden>★</span><span class="sc" data-score="' + x.idx + '">0</span></div>';
       }).join('') + '</div></section>' +
-      '<section class="show-words"><span class="label">Words</span><div class="stream" data-stream></div><div data-gems></div></section>' +
+      '<section class="show-words"><span class="label">Words \u00b7 tap one to see what it means</span><div class="stream" data-stream></div><div data-gems></div></section>' +
       '</div><div class="show-actions" data-actions hidden></div></div>' +
       (opts.onReady ? '<div class="ready-bar"><button class="btn ready-btn" data-readyme>' + I.play + 'Ready for next round</button></div>' : '')
     );
@@ -1062,6 +1138,7 @@
     function wordEl(x, instant) {
       var d = document.createElement('div');
       d.className = 'sw' + (instant ? ' settled ' + (x.unique ? 'gold' : 'dup') : ' in');
+      d.setAttribute('data-def', x.w); d.setAttribute('role', 'button'); d.tabIndex = 0;
       d.innerHTML = '<span class="ww"><b>' + esc(x.w.toUpperCase()) + '</b><span class="who">' + x.who.map(function (p) { return avatar(p.avatar, 22); }).join('') + '<small>' + esc(x.who.map(function (p) { return p.name; }).join(', ')) + '</small></span></span>' +
         '<span class="tag">' + (x.unique ? 'Unique ×2' : 'Shared') + '</span><span class="pts">' + (x.unique ? x.base + ' × 2 = ' + (x.base * 2) : '+' + x.base) + '</span>' +
         (x.unique && !instant ? '<span class="sparks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' : '');
@@ -1092,9 +1169,9 @@
       if (!gems.length && !longest) return;
       var g = $('[data-gems]', el);
       g.innerHTML = '<div class="card gems' + (animated ? ' pop-in' : '') + '"><div class="missed">Missed opportunity!</div>' +
-        (longest ? '<div class="gem-long"><small>Longest word on the board</small><b>' + esc(longest.toUpperCase()) + '</b><span>' + longest.length + ' letters · ' + plural(scoreOf(longest, scoring), 'point', 'points') +
+        (longest ? '<div class="gem-long" data-def="' + esc(longest) + '" role="button" tabindex="0"><small>Longest word on the board</small><b>' + esc(longest.toUpperCase()) + '</b><span>' + longest.length + ' letters · ' + plural(scoreOf(longest, scoring), 'point', 'points') +
           (R.counts[longest] ? ' · found by ' + esc(R.finders[longest].map(function (p) { return p.name; }).join(', ')) : ' · nobody found it') + '</span></div>' : '') +
-        gems.map(function (w, i) { return '<div class="gem" style="animation-delay:' + (animated ? 0.4 + i * 0.25 : 0) + 's"><b>' + esc(w.toUpperCase()) + '</b><span class="pts">' + plural(scoreOf(w, scoring), 'pt', 'pts') + '</span></div>'; }).join('') + '</div>';
+        gems.map(function (w, i) { return '<div class="gem" data-def="' + esc(w) + '" role="button" tabindex="0" style="animation-delay:' + (animated ? 0.4 + i * 0.25 : 0) + 's"><b>' + esc(w.toUpperCase()) + '</b><span class="pts">' + plural(scoreOf(w, scoring), 'pt', 'pts') + '</span></div>'; }).join('') + '</div>';
       if (animated) { Snd.tone(392, 0.2, 'triangle', 0.05); Snd.tone(330, 0.3, 'triangle', 0.05, 0.18); }
     }
     function title() {
