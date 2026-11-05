@@ -492,3 +492,10 @@ h2.title { margin: 0; font-size: 24px; font-weight: 800; }
 .seg.hint-seg { grid-auto-flow: row; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .seg.hint-seg button { font-size: 14px; line-height: 1.15; padding: 4px 2px; }
 @media (max-width: 520px) { .seg.hint-seg { grid-template-columns: repeat(3, minmax(0, 1fr)); } .seg.hint-seg button { font-size: 15px; } }
+
+/* Installed app: no pull-down-to-refresh, no bounce */
+@media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
+  html, body { overscroll-behavior: none; overscroll-behavior-y: none; }
+  html, body { position: fixed; inset: 0; overflow: hidden; width: 100%; }
+}
+.scroll, .stream, .sheet { overscroll-behavior: contain; }
