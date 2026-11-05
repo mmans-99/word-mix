@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 16;
+  var APP_VERSION = 17;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   function $(sel, el) { return (el || document).querySelector(sel); }
@@ -1286,6 +1286,15 @@
       '<p class="hint-text">Phones can\u2019t connect with Wi-Fi off or in Airplane mode. With no internet, the host turns on their phone\u2019s <b>hotspot</b> (mobile data can be off), and everyone joins that Wi-Fi. Or all join the same Wi-Fi router.</p></div>';
   }
   window.addEventListener('online', function () { $$('.net-warn', app).forEach(function (n) { n.remove(); }); });
+  // Shows WMNet.describe(pc) every second in el until stop() is called.
+  function liveDiag(el, pc) {
+    var on = true;
+    (function tick() {
+      if (!on || !el.isConnected) return;
+      WMNet.describe(pc).then(function (t) { if (on) el.textContent = 'Version ' + APP_VERSION + '\n' + t; setTimeout(tick, 1000); });
+    })();
+    return function () { on = false; };
+  }
   function qrHtml() { return '<div class="qr-box"><canvas data-qr></canvas></div>'; }
   function drawQr(el, code) {
     var c = $('[data-qr]', el);
@@ -1385,7 +1394,7 @@
         (cfg.screenOnly ? '<p class="hint-text">This device is the big screen and doesn\u2019t play.' + (list.length ? '' : ' Waiting for players to join.') + '</p>' : '') + '</div></div>';
       if (guests.length < MAX_PLAYERS - 1) {
         html += '<div class="card" style="align-items:stretch"><b style="font-size:18px">Add a player</b>';
-        if (busy) html += '<div class="status"><span class="spinner"></span>Connecting…</div>';
+        if (busy) html += '<div class="status"><span class="spinner"></span>Connecting…</div><pre class="diag-box" data-diag></pre>';
         else if (!pending) html += '<div class="status"><span class="spinner"></span>Making a code…</div>';
         else html += '<p class="hint-text"><b>1.</b> Your friend taps <b>Party mode</b> \u2192 <b>Phone to phone</b> \u2192 <b>Join a game</b> and scans this code.</p>' + qrHtml() +
           '<p class="hint-text"><b>2.</b> A code appears on their phone. Tap below and point your camera at it.</p>' +
@@ -1396,6 +1405,8 @@
       html += '<button class="btn btn-orange" data-start ' + (guests.length ? '' : 'disabled') + '>' + I.play + 'Start game</button>';
       if (!guests.length) html += '<p class="hint-text" style="text-align:center">Waiting for at least one friend to join.</p>';
       body.innerHTML = html;
+      var dg = $('[data-diag]', body);
+      if (dg && pending) liveDiag(dg, pending.pc);
       if (pending && !busy) {
         drawQr(body, pending.code);
         $('[data-scan]', body).onclick = function () { openScanner('Point at the code on your friend\u2019s phone', accept); };
@@ -1409,11 +1420,12 @@
       busy = true; render();
       var p = pending;
       WMNet.acceptAnswer(p.pc, code).then(function () {
+        render();
         setTimeout(function () {
           if (busy && pending === p && !(guests.some(function (g) { return g.pc === p.pc; }))) {
             busy = false; toast('Could not connect. Check you are on the same Wi-Fi.'); try { p.pc.close(); } catch (e) {} newOffer();
           }
-        }, 15000);
+        }, 45000);
       }).catch(function (e) { busy = false; toast(e.message || 'That code did not work'); render(); });
     }
     function startRound() {
@@ -1486,11 +1498,12 @@
         if (closed) { l.pc.close(); return; }
         link = l;
         body.innerHTML = '<div class="card" style="align-items:stretch"><b style="font-size:18px">Show this to the host</b><p class="hint-text">The host taps <b>Scan their code</b> and points their phone at this code.</p>' + qrHtml() +
-          '<div class="status"><span class="spinner"></span>Waiting for the host…</div>' + (SHOW_CODES ? '<button class="btn btn-ghost" data-text>Use a text code</button>' : '') + '</div>';
+          '<div class="status"><span class="spinner"></span>Waiting for the host…</div><pre class="diag-box" data-diag></pre>' + (SHOW_CODES ? '<button class="btn btn-ghost" data-text>Use a text code</button>' : '') + '</div>';
         drawQr(body, l.code);
+        liveDiag($('[data-diag]', body), l.pc);
         if (SHOW_CODES) $('[data-text]', body).onclick = function () { codeFallback(l.code, null); };
         l.pc.addEventListener('connectionstatechange', function () {
-          if (l.pc.connectionState === 'failed') { toast('Could not connect. Check you are on the same Wi-Fi.'); if (!closed) { leave(); joinGame(); } }
+          if (l.pc.connectionState === 'failed') toast('Could not connect. Screenshot this screen for troubleshooting.', 5000);
         });
         l.dcPromise.then(function (ch) {
           dc = ch;

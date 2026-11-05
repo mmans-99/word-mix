@@ -159,7 +159,45 @@
     return api;
   }
 
+  // Live connection readout for troubleshooting: what each side is trying and whether replies arrive.
+  function browserName() {
+    var u = navigator.userAgent;
+    if (/SamsungBrowser\/([\d.]+)/.test(u)) return 'Samsung Internet ' + RegExp.$1;
+    if (/CriOS\/([\d.]+)/.test(u)) return 'Chrome iOS ' + RegExp.$1;
+    if (/Chrome\/([\d.]+)/.test(u)) return 'Chrome ' + RegExp.$1;
+    if (/Version\/([\d.]+).*Safari/.test(u)) return 'Safari ' + RegExp.$1;
+    return u.slice(0, 60);
+  }
+  function addrList(sdp) {
+    var out = [];
+    (sdp || '').split(/\r?\n/).forEach(function (l) {
+      var m = /^a=candidate:\S+ \d+ (udp|tcp) \d+ (\S+) (\d+) typ (\w+)/i.exec(l);
+      if (m) out.push((/\.local$/.test(m[2]) ? 'hidden-name' : m[2]) + ':' + m[3] + '/' + m[1]);
+    });
+    return out.length ? out.join(', ') : 'none listed';
+  }
+  async function describe(pc) {
+    var lines = ['Browser: ' + browserName() + (window.matchMedia('(display-mode: standalone)').matches ? ' (installed app)' : ' (browser tab)'),
+      'State: ice=' + pc.iceConnectionState + ' conn=' + (pc.connectionState || '?') + ' gather=' + pc.iceGatheringState,
+      'My addresses: ' + addrList(pc.localDescription && pc.localDescription.sdp),
+      'Their addresses: ' + addrList(pc.remoteDescription && pc.remoteDescription.sdp)];
+    try {
+      var st = await pc.getStats(), cands = {}, pairs = [];
+      st.forEach(function (r) {
+        if (r.type === 'local-candidate' || r.type === 'remote-candidate') cands[r.id] = (r.address || r.ip || '?') + ':' + r.port + ' ' + (r.candidateType || '');
+        if (r.type === 'candidate-pair') pairs.push(r);
+      });
+      if (!pairs.length) lines.push('Attempts: none yet');
+      pairs.slice(0, 6).forEach(function (p) {
+        lines.push((cands[p.localCandidateId] || '?') + ' \u2192 ' + (cands[p.remoteCandidateId] || '?') + ' | ' + p.state +
+          ' | sent ' + (p.requestsSent || 0) + ', replies ' + (p.responsesReceived || 0) + ', their tries ' + (p.requestsReceived || 0));
+      });
+    } catch (e) { lines.push('Stats unavailable: ' + e.message); }
+    return lines.join('\n');
+  }
+
   root.WMNet = {
+    describe: describe,
     createOffer: createOffer, acceptAnswer: acceptAnswer, answerOffer: answerOffer,
     primeCamera: primeCamera, startScanner: startScanner, loadJsQR: loadJsQR, JSQR_URL: JSQR_URL,
     supported: typeof RTCPeerConnection !== 'undefined'
