@@ -57,6 +57,12 @@
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
     var m = document.querySelector('meta[name="theme-color"]');
     if (m) m.setAttribute('content', dark ? '#E2621C' : '#F26B21');
+    // Tell the browser exactly which look we want, so phone-wide dark modes (like Samsung Internet's)
+    // don't repaint the Original colours.
+    var scheme = t === 'original' ? 'only light' : t === 'dark' ? 'only dark' : 'light dark';
+    var cs = document.querySelector('meta[name="color-scheme"]');
+    if (cs) cs.setAttribute('content', scheme);
+    document.documentElement.style.colorScheme = dark ? (t === 'auto' ? 'dark' : 'only dark') : (t === 'auto' ? 'light' : 'only light');
   }
   applyTheme();
   if (darkQuery) {
