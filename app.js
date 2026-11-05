@@ -1221,9 +1221,9 @@
   function nearby() {
     if (window.WM_PREVIEW) { toast('Nearby play works in the installed version of Word Mix, not this preview', 3600); return; }
     if (!WMNet.supported) { toast('This browser cannot do nearby play'); return home(); }
-    var scr = mount(backBand('Play nearby') + '<div class="scroll">' +
+    var scr = mount(backBand('Play nearby') + '<div class="scroll">' + netWarning() +
       '<div class="card"><b style="font-size:18px">How it works</b><ol class="steps">' +
-      '<li>Everyone joins the same Wi-Fi, or the host turns on their phone’s hotspot.</li>' +
+      '<li>Everyone joins the same Wi-Fi, or the host turns on their phone’s hotspot. No internet needed, but Wi-Fi must be on (not Airplane mode with Wi-Fi off).</li>' +
       '<li>The host picks a mode and shows a code.</li>' +
       '<li>Each friend scans it, then the host scans the reply.</li></ol></div>' +
       '<button class="big-choice" data-host><span class="ic" style="background:#FFE2C7;color:#C8530F">' + I.wifi + '</span><span><b>Host a game</b><small>Up to 8 players</small></span></button>' +
@@ -1264,6 +1264,13 @@
     var use = $('[data-use]', o);
     if (use) use.onclick = function () { var v = $('[data-paste]', o).value.trim(); if (v) { o.remove(); onPaste(v); } };
   }
+  // Phones need a shared network (Wi-Fi router or a hotspot) even with no internet.
+  function netWarning() {
+    if (navigator.onLine !== false) return '';
+    return '<div class="card net-warn" role="alert"><b>This device isn\u2019t on any network</b>' +
+      '<p class="hint-text">Phones can\u2019t connect with Wi-Fi off or in Airplane mode. With no internet, the host turns on their phone\u2019s <b>hotspot</b> (mobile data can be off), and everyone joins that Wi-Fi. Or all join the same Wi-Fi router.</p></div>';
+  }
+  window.addEventListener('online', function () { $$('.net-warn', app).forEach(function (n) { n.remove(); }); });
   function qrHtml() { return '<div class="qr-box"><canvas data-qr></canvas></div>'; }
   function drawQr(el, code) {
     var c = $('[data-qr]', el);
@@ -1358,7 +1365,7 @@
       }
       var body = $('[data-body]', scr.el);
       var list = players();
-      var html = '<div class="card"><span class="label">' + MODES[cfg.mode].name + ' · ' + cfg.n + ' × ' + cfg.n + ' · Players ' + list.length + ' of ' + MAX_PLAYERS + '</span><div class="players">' +
+      var html = netWarning() + '<div class="card"><span class="label">' + MODES[cfg.mode].name + ' · ' + cfg.n + ' × ' + cfg.n + ' · Players ' + list.length + ' of ' + MAX_PLAYERS + '</span><div class="players">' +
         list.map(function (p) { return '<div class="prow">' + avatar(p.avatar, 44) + '<b>' + esc(p.name) + '</b><span class="tag">' + (p.id === 'h' ? 'Host' : 'Joined') + '</span></div>'; }).join('') +
         (cfg.screenOnly ? '<p class="hint-text">This device is the big screen and doesn\u2019t play.' + (list.length ? '' : ' Waiting for players to join.') + '</p>' : '') + '</div></div>';
       if (guests.length < MAX_PLAYERS - 1) {
@@ -1452,7 +1459,7 @@
     on(scr.el, '[data-back]', 'click', function () { leave(); nearby(); });
     function step1() {
       var body = $('[data-body]', scr.el);
-      body.innerHTML = '<div class="card"><b style="font-size:18px">Scan the host’s code</b><p class="hint-text">Ask the host to tap <b>Host a game</b>. Their screen will show a code.</p>' +
+      body.innerHTML = netWarning() + '<div class="card"><b style="font-size:18px">Scan the host’s code</b><p class="hint-text">Ask the host to tap <b>Host a game</b>. Their screen will show a code.</p>' +
         '<button class="btn btn-blue" data-scan>' + I.camera + 'Open camera</button><button class="btn btn-ghost" data-text>Can’t scan? Use a text code</button></div>';
       $('[data-scan]', body).onclick = function () { openScanner('Point at the code on the host’s phone', gotOffer); };
       $('[data-text]', body).onclick = function () { codeFallback(null, gotOffer, 'Host’s code'); };
