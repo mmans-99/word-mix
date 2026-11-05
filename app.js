@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 20;
+  var APP_VERSION = 21;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   function $(sel, el) { return (el || document).querySelector(sel); }
@@ -1102,16 +1102,22 @@
       longest = bw.sort(function (a, b) { return b.length - a.length || scoreOf(b, scoring) - scoreOf(a, scoring); })[0] || '';
     }
     var winners = R.rows.filter(function (r) { return r.score === R.rows[0].score; });
+    // Last place gets the Loser label (nobody does if everyone tied).
+    var lowest = R.rows.length ? R.rows[R.rows.length - 1].score : 0;
+    var losers = R.rows.length > 1 && lowest < R.rows[0].score ? R.rows.filter(function (r) { return r.score === lowest; }) : [];
+    function showLosers() {
+      losers.forEach(function (r) { P.forEach(function (x) { if (x.p === r.p) { var c = $('[data-loser="' + x.idx + '"]', el); if (c) c.hidden = false; } }); });
+    }
     var scr = mount(
       '<header class="band show-band"><div class="band-row"><div class="eyebrow" style="text-align:left">Round ' + round + ' · ' + (scoring === 'rarity' ? 'Rarity scoring' : 'Party') + '</div>' +
-      '<button class="band-btn" data-skip>Skip</button></div>' +
+      '<div style="display:flex;gap:8px"><button class="band-btn" data-speed aria-pressed="false">\u23e9 Speed up</button><button class="band-btn" data-skip>Skip</button></div></div>' +
       '<div class="show-title" data-title>Counting the words…</div>' +
       '<div class="sub">Shared words score normally. Words only one player found score double.</div></header>' +
       '<div class="scroll"><div class="show">' +
       '<section class="show-lb"><span class="label" data-lbtitle>This round</span><div class="lb-stage" data-stage style="height:' + (P.length * 66) + 'px">' +
       P.map(function (x) {
         return '<div class="lbs-row" data-row="' + x.idx + '">' + avatar(x.p.avatar, 42) + '<span class="nm"><b>' + esc(x.p.name) + (x.p.me ? ' (you)' : '') + '</b><small data-sub="' + x.idx + '"></small></span>' +
-          '<span class="ready-chip" data-ready="' + x.idx + '" hidden>Ready</span><span class="crown" data-crown="' + x.idx + '" hidden>★</span><span class="sc" data-score="' + x.idx + '">0</span></div>';
+          '<span class="ready-chip" data-ready="' + x.idx + '" hidden>Ready</span><span class="loser-chip" data-loser="' + x.idx + '" hidden>Loser</span><span class="crown" data-crown="' + x.idx + '" hidden>★</span><span class="sc" data-score="' + x.idx + '">0</span></div>';
       }).join('') + '</div></section>' +
       '<section class="show-words"><span class="label">Words \u00b7 tap one to see what it means</span><div class="stream" data-stream></div><div data-gems></div></section>' +
       '</div><div class="show-actions" data-actions hidden></div></div>' +
@@ -1148,23 +1154,30 @@
       x.who.forEach(function (p) {
         var t = P.filter(function (y) { return y.p === p; })[0];
         var old = t.score; t.score += x.unique ? x.base * 2 : x.base;
-        animateNum($('[data-score="' + t.idx + '"]', el), old, t.score, 450);
+        animateNum($('[data-score="' + t.idx + '"]', el), old, t.score, 700 / speed);
       });
       place(false);
     }
-    var gap = Math.max(300, Math.min(800, 16000 / Math.max(1, seq.length)));
-    seq.forEach(function (x, i) {
-      later(function () {
-        var d = wordEl(x, false);
-        stream.insertBefore(d, stream.firstChild);
-        later(function () {
-          d.classList.remove('in'); d.classList.add(x.unique ? 'gold' : 'dup');
-          if (x.unique) { Snd.tone(1318, 0.12, 'sine', 0.06); Snd.tone(1760, 0.18, 'sine', 0.05, 0.08); } else Snd.tone(220, 0.14, 'square', 0.025);
-          award(x);
-        }, Math.min(450, gap * 0.6));
-      }, 700 + i * gap);
+    // The reveal runs as a list of steps. Each waits its own time divided by the current speed,
+    // so the Speed up button takes effect straight away.
+    var speed = 1, steps = [], stepAt = 0;
+    function step(after, fn) { steps.push({ after: after, fn: fn }); }
+    function runSteps() {
+      if (stepAt >= steps.length) return;
+      var st = steps[stepAt++];
+      later(function () { st.fn(); runSteps(); }, st.after / speed);
+    }
+    var gap = Math.max(1100, Math.min(1800, 40000 / Math.max(1, seq.length)));
+    step(1200, function () {});
+    seq.forEach(function (x) {
+      var d;
+      step(gap * 0.45, function () { d = wordEl(x, false); stream.insertBefore(d, stream.firstChild); });
+      step(gap * 0.55, function () {
+        d.classList.remove('in'); d.classList.add(x.unique ? 'gold' : 'dup');
+        if (x.unique) { Snd.tone(1318, 0.12, 'sine', 0.06); Snd.tone(1760, 0.18, 'sine', 0.05, 0.08); } else Snd.tone(220, 0.14, 'square', 0.025);
+        award(x);
+      });
     });
-    var tEnd = 700 + seq.length * gap + 600;
     function showGems(animated) {
       if (!gems.length && !longest) return;
       var g = $('[data-gems]', el);
@@ -1183,18 +1196,20 @@
       var w = winners[0];
       var o = document.createElement('div');
       o.className = 'overlay center winner-stage';
-      o.innerHTML = '<div class="winner-card"><div class="winner-av">' + avatar(w.p.avatar, 150) + '</div><div class="winner-name">' + (winners.length > 1 ? 'It’s a tie!' : esc(w.p.name) + ' wins!') + '</div><div class="winner-pts">' + plural(w.score, 'point', 'points') + ' this round</div><p class="hint-text" style="color:#FFF3D9">Tap to continue</p></div>';
+      o.innerHTML = '<div class="winner-card"><div class="winner-av">' + avatar(w.p.avatar, 150) + '</div><div class="winner-name">' + (winners.length > 1 ? 'It’s a tie!' : esc(w.p.name) + ' wins!') + '</div><div class="winner-pts">' + plural(w.score, 'point', 'points') + ' this round</div>' +
+        (losers.length ? '<div class="loser-line">' + losers.map(function (r) { return avatar(r.p.avatar, 36); }).join('') + '<span>' + esc(losers.map(function (r) { return r.p.name; }).join(' & ')) + (losers.length > 1 ? ' are the losers' : ' is the loser') + '</span></div>' : '') +
+        '<p class="hint-text" style="color:#FFF3D9">Tap to continue</p></div>';
       el.appendChild(o);
       confetti(o); Snd.cheer();
       var gone = false;
       function close() { if (gone) return; gone = true; o.classList.add('leaving-ov'); setTimeout(function () { o.remove(); next(); }, 350); }
-      o.onclick = close; later(close, 3600);
+      o.onclick = close; later(close, 5500 / speed);
     }
     function standingsView(animated) {
       $('[data-lbtitle]', el).textContent = table.length ? 'Overall after ' + plural(round, 'round', 'rounds') : 'This round';
       P.forEach(function (x) {
         var sc = $('[data-score="' + x.idx + '"]', el);
-        if (animated) animateNum(sc, x.final, x.total, 900); else sc.textContent = x.total;
+        if (animated) animateNum(sc, x.final, x.total, 1500 / speed); else sc.textContent = x.total;
         $('[data-sub="' + x.idx + '"]', el).textContent = '+' + x.final + ' this round · ' + plural(x.wins, 'win', 'wins');
       });
       place(true);
@@ -1205,21 +1220,29 @@
       if (done) return;
       done = true;
       var sk = $('[data-skip]', el); if (sk) sk.remove();
+      var sp = $('[data-speed]', el); if (sp) sp.remove();
       var a = $('[data-actions]', el);
       a.innerHTML = (opts.note ? '<p class="hint-text" style="text-align:center">' + esc(opts.note) + '</p>' : '') +
         (opts.actions || []).map(function (x, i) { return '<button class="btn ' + (x.cls || 'btn-white') + '" data-act="' + i + '">' + (x.icon || '') + esc(x.label) + '</button>'; }).join('');
       a.hidden = false; a.classList.add('pop-in');
       on(a, '[data-act]', 'click', function (e) { var x = opts.actions[+e.currentTarget.getAttribute('data-act')]; x.run(); });
     }
-    later(function () { showGems(true); }, tEnd);
-    later(function () { title(); celebrate(function () { standingsView(true); later(finish, 1000); }); }, tEnd + 2200);
+    step(1500, function () { showGems(true); });
+    step(3500, function () { title(); showLosers(); celebrate(function () { later(function () { standingsView(true); later(finish, 1800 / speed); }, 600 / speed); }); });
+    runSteps();
+    $('[data-speed]', el).onclick = function (e) {
+      speed = speed === 1 ? 3 : 1;
+      var b = e.currentTarget;
+      b.setAttribute('aria-pressed', String(speed > 1));
+      b.textContent = speed > 1 ? '\u25b6 Normal speed' : '\u23e9 Speed up';
+    };
     $('[data-skip]', el).onclick = function () {
       timers.forEach(clearTimeout); timers = [];
       $$('.winner-stage', el).forEach(function (n) { n.remove(); });
       stream.innerHTML = '';
       seq.slice().reverse().forEach(function (x) { stream.appendChild(wordEl(x, true)); });
       P.forEach(function (x) { x.score = x.final; });
-      showGems(false); title(); standingsView(false); finish();
+      showGems(false); title(); showLosers(); standingsView(false); finish();
     };
     return {
       el: el,

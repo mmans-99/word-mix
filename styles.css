@@ -520,3 +520,10 @@ h2.title { margin: 0; font-size: 24px; font-weight: 800; }
 .defs .pos { font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--orange); margin-right: 4px; }
 .defs em { display: block; color: var(--muted); font-size: 14px; margin-top: 2px; }
 .def-src { font-size: 12px; }
+
+/* Loser label */
+.loser-chip { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; background: #5B4A3C; color: #FFF3D9; animation: loserIn .9s cubic-bezier(.3,1.5,.5,1) both; }
+@keyframes loserIn { 0% { transform: rotate(-20deg) scale(.2); opacity: 0; } 60% { transform: rotate(8deg) scale(1.15); opacity: 1; } 80% { transform: rotate(-4deg); } 100% { transform: none; opacity: 1; } }
+.loser-line { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 6px 14px 6px 6px; border-radius: 999px; background: rgba(0,0,0,.35); color: #FFF3D9; font-weight: 800; font-size: 16px; animation: dialogIn .6s 1.2s cubic-bezier(.3,1.4,.5,1) both; }
+.loser-line svg { filter: grayscale(.6); }
+.band-btn[aria-pressed="true"] { background: #FFF3D9; color: #3A2614; }
