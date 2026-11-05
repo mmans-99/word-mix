@@ -2,6 +2,7 @@
 (function () {
   'use strict';
 
+  var APP_VERSION = 14;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   function $(sel, el) { return (el || document).querySelector(sel); }
@@ -1217,7 +1218,7 @@
         '<div class="card">' + toggle('sound', 'Sound effects', st.sound) + toggle('vibrate', 'Vibration', st.vibrate) + '</div>' +
         '<button class="btn btn-white" data-profile>' + I.user + 'Edit my profile</button>' +
         '<button class="btn btn-white" data-clear>Clear leaderboards</button>' +
-        '<p class="hint-text" style="text-align:center">Word list: ' + WORDS.length.toLocaleString() + ' British English words.</p>';
+        '<p class="hint-text" style="text-align:center">Word list: ' + WORDS.length.toLocaleString() + ' British English words.<br>Version ' + APP_VERSION + '</p>';
       bindHintControls(body, render);
       on(body, '[data-theme]', 'click', function (e) { st.theme = e.currentTarget.getAttribute('data-theme'); st.themeChosen = true; save(); applyTheme(); render(); });
       on(body, '[data-tg]', 'click', function (e) { var k = e.currentTarget.getAttribute('data-tg'); st[k] = !st[k]; save(); render(); if (k === 'vibrate') buzz(20); });
@@ -1299,7 +1300,7 @@
   function hostLobby(cfg) {
     var me = { id: 'h', key: 'h', name: S.profile.name, avatar: S.profile.avatar, me: true };
     var guests = [];
-    var pending = null, busy = false, inGame = false, closed = false, gen = 0, guestSeq = 0;
+    var pending = null, busy = false, busyInfo = '', inGame = false, closed = false, gen = 0, guestSeq = 0;
     var round = null;
     var session = { round: 0, totals: {} };
     var spectator = null, resultsApi = null;
@@ -1384,11 +1385,12 @@
         (cfg.screenOnly ? '<p class="hint-text">This device is the big screen and doesn\u2019t play.' + (list.length ? '' : ' Waiting for players to join.') + '</p>' : '') + '</div></div>';
       if (guests.length < MAX_PLAYERS - 1) {
         html += '<div class="card" style="align-items:stretch"><b style="font-size:18px">Add a player</b>';
-        if (busy) html += '<div class="status"><span class="spinner"></span>Connecting…</div>';
+        if (busy) html += '<div class="status"><span class="spinner"></span><span data-cstate>Connecting…</span></div><p class="hint-text diag">' + esc(busyInfo || '') + '</p>';
         else if (!pending) html += '<div class="status"><span class="spinner"></span>Making a code…</div>';
         else html += '<p class="hint-text"><b>1.</b> Your friend taps <b>Party mode</b> \u2192 <b>Phone to phone</b> \u2192 <b>Join a game</b> and scans this code.</p>' + qrHtml() +
           '<p class="hint-text"><b>2.</b> A code appears on their phone. Tap below and point your camera at it.</p>' +
           '<button class="btn btn-blue" data-scan>' + I.camera + 'Scan their code</button>' +
+          '<p class="hint-text diag">Version ' + APP_VERSION + ' \u00b7 This device: ' + esc(pending.info || '') + '</p>' +
           (SHOW_CODES ? '<button class="btn btn-ghost" data-text>Use a text code</button>' : '');
         html += '</div>';
       }
@@ -1407,12 +1409,24 @@
       if (!pending || busy) return;
       busy = true; render();
       var p = pending;
-      WMNet.acceptAnswer(p.pc, code).then(function () {
+      busyInfo = 'This device: ' + (p.info || '');
+      var showState = function () {
+        var el = scr && $('[data-cstate]', scr.el);
+        var stt = p.pc.connectionState || p.pc.iceConnectionState;
+        var words = { 'new': 'Starting\u2026', checking: 'Looking for their phone on the network\u2026', connecting: 'Looking for their phone on the network\u2026', connected: 'Connected, saying hello\u2026', completed: 'Connected, saying hello\u2026', failed: 'Couldn\u2019t reach their phone', disconnected: 'Connection dropped' };
+        if (el) el.textContent = words[stt] || ('Connecting (' + stt + ')\u2026');
+      };
+      p.pc.addEventListener('iceconnectionstatechange', showState);
+      p.pc.addEventListener('connectionstatechange', showState);
+      WMNet.acceptAnswer(p.pc, code).then(function (theirs) {
+        busyInfo = 'This device: ' + (p.info || '') + ' \u00b7 Their phone: ' + theirs;
+        var d = scr && $('.diag', scr.el); if (d) d.textContent = busyInfo;
+        showState();
         setTimeout(function () {
           if (busy && pending === p && !(guests.some(function (g) { return g.pc === p.pc; }))) {
-            busy = false; toast('Could not connect. Check you are on the same Wi-Fi.'); try { p.pc.close(); } catch (e) {} newOffer();
+            busy = false; toast('Could not connect. Check you are on the same Wi-Fi or hotspot.'); try { p.pc.close(); } catch (e) {} newOffer();
           }
-        }, 15000);
+        }, 30000);
       }).catch(function (e) { busy = false; toast(e.message || 'That code did not work'); render(); });
     }
     function startRound() {
@@ -1485,7 +1499,8 @@
         if (closed) { l.pc.close(); return; }
         link = l;
         body.innerHTML = '<div class="card" style="align-items:stretch"><b style="font-size:18px">Now show this to the host</b><p class="hint-text">The host taps <b>Scan their code</b> and points their camera at this. Turn your brightness up if it\u2019s slow to scan.</p>' + qrHtml() +
-          '<div class="status" data-st><span class="spinner"></span>Waiting for the host to scan this…</div>' + (SHOW_CODES ? '<button class="btn btn-ghost" data-text>Use a text code</button>' : '') + '</div>';
+          '<div class="status" data-st><span class="spinner"></span>Waiting for the host to scan this…</div>' +
+          '<p class="hint-text diag">Version ' + APP_VERSION + ' \u00b7 This device: ' + esc(l.info || '') + '</p>' + (SHOW_CODES ? '<button class="btn btn-ghost" data-text>Use a text code</button>' : '') + '</div>';
         drawQr(body, l.code);
         if (SHOW_CODES) $('[data-text]', body).onclick = function () { codeFallback(l.code, null); };
         // Stay on this screen if a connection attempt fails; offer a fresh try instead of jumping back.
@@ -1553,6 +1568,7 @@
   // ---------- Boot ----------
   function boot() {
     app.innerHTML = '<section class="screen"><div class="loading">' + logo(true, true) + '<p>Loading words…</p></div></section>';
+    if (navigator.onLine !== false && !('BarcodeDetector' in window)) setTimeout(function () { WMNet.loadJsQR().catch(function () {}); }, 3000);
     loadWords().then(home, function () {
       $('.loading p', app).textContent = 'Could not load the word list. Check your connection and reopen Word Mix.';
     });

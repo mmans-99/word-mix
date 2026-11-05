@@ -49,6 +49,16 @@
       });
     });
   }
+  // Which addresses this device offered: a real one (192.168…) or a hidden private name (….local).
+  function addrInfo(sdp) {
+    var out = [];
+    sdp.split(/\r?\n/).forEach(function (l) {
+      var m = /^a=candidate:\S+ \d+ udp \d+ (\S+) \d+ typ (\w+)/i.exec(l);
+      if (m && out.indexOf(m[1]) < 0) out.push(m[1]);
+    });
+    if (!out.length) return 'no network address found';
+    return out.map(function (a) { return /\.local$/.test(a) ? 'hidden name' : a; }).join(', ');
+  }
   function newPc() { return new RTCPeerConnection({ iceServers: [] }); }
 
   // Phones only reveal their real Wi-Fi address to the connection while the camera is running.
@@ -69,13 +79,14 @@
       var dc = pc.createDataChannel('wordmix', { ordered: true });
       await pc.setLocalDescription(await pc.createOffer());
       await waitIce(pc);
-      return { pc: pc, dc: dc, code: await pack(pc.localDescription) };
+      return { pc: pc, dc: dc, code: await pack(pc.localDescription), info: addrInfo(pc.localDescription.sdp) };
     } finally { release(); }
   }
   async function acceptAnswer(pc, code) {
     var d = await unpack(code);
     if (d.type !== 'answer') throw new Error('That is the host code. Scan the code on your friend’s phone.');
     await pc.setRemoteDescription(d);
+    return addrInfo(d.sdp);
   }
   // Guest: answer the host's offer.
   async function answerOffer(code) {
@@ -88,7 +99,7 @@
       await pc.setRemoteDescription(d);
       await pc.setLocalDescription(await pc.createAnswer());
       await waitIce(pc);
-      return { pc: pc, dcPromise: dcPromise, code: await pack(pc.localDescription) };
+      return { pc: pc, dcPromise: dcPromise, code: await pack(pc.localDescription), info: addrInfo(pc.localDescription.sdp) };
     } finally { release(); }
   }
 
@@ -157,7 +168,7 @@
             canvas.width = Math.round(w * s); canvas.height = Math.round(h * s);
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            var r = decode(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+            var r = decode(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
             if (r && r.data && r.data.indexOf(PREFIX) === 0) text = r.data;
           }
           if (text) { api.stop(); onCode(text); return; }

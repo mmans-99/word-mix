@@ -502,3 +502,5 @@ h2.title { margin: 0; font-size: 24px; font-weight: 800; }
 
 .net-warn { box-shadow: 0 0 0 3px var(--bad), 0 4px 0 var(--card-sh); }
 .net-warn b { color: var(--bad); font-size: 17px; }
+
+.diag { font-size: 12px; text-align: center; opacity: .85; word-break: break-word; }
