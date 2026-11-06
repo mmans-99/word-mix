@@ -2,9 +2,16 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 24;
+  var APP_VERSION = 25;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
+  // No pinch zoom. Android follows the viewport tag; iPhone ignores it, so it is
+  // blocked here too. Double-tap zoom is off in styles.css, since without pinch
+  // there would be no way to zoom back out.
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) { e.preventDefault(); }, { passive: false });
+  });
+  document.addEventListener('touchmove', function (e) { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
   function $(sel, el) { return (el || document).querySelector(sel); }
   function $$(sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -189,18 +196,22 @@
     }
     return cells;
   }
-  function countEasy(words) { var c = 0; words.forEach(function (p, w) { if (isEasyWord(w)) c++; }); return c; }
+  // Boards are judged on everyday words, and everyday words of 5+ letters count extra,
+  // so the board picked has words people can actually spot. Any real word still scores.
+  function countFindable(words) {
+    var c = 0;
+    words.forEach(function (p, w) { if (isEasyWord(w)) c += w.length >= 5 ? 3 : 1; });
+    return c;
+  }
   function makeBoard(n, minLen, seed, easy) {
-    var rand = rng(seed == null ? (Math.random() * 4294967296) >>> 0 : seed);
-    // Easy boards are judged on how many everyday words they hold.
-    var target = easy ? { 4: 70, 5: 170, 6: 300 }[n] : { 4: 40, 5: 110, 6: 200 }[n], best = null;
-    var attempts = easy ? (n === 6 ? 25 : n === 5 ? 50 : 80) : (n === 6 ? 10 : 20);
+    var rand = rng(seed == null ? (Math.random() * 4294967296) >>> 0 : seed), best = null;
+    // Try several boards and keep the one with the most findable words.
+    var attempts = easy ? (n === 6 ? 25 : n === 5 ? 50 : 80) : (n === 6 ? 25 : n === 5 ? 40 : 60);
     for (var a = 0; a < attempts; a++) {
       var cells = makeCells(n, rand, easy);
       var words = solve(cells, n, minLen);
-      var score = easy ? countEasy(words) : words.size;
+      var score = countFindable(words);
       if (!best || score > best.score) best = { cells: cells, words: words, score: score };
-      if (score >= target) break;
     }
     return { n: n, minLen: minLen, cells: best.cells, words: best.words, easy: !!easy };
   }
@@ -644,25 +655,61 @@
   }
 
   // ---------- The game ----------
-  // Round start: the letters shake, the tiles land, then beep, beep, BEEP. full=false plays only the beeps.
+  // Round start, on the real board: the empty board shakes, the tiles drop in one by one,
+  // their letters roll through random letters during beep, beep, BEEP, then on GO they
+  // settle on the real letters in a quick ripple. full=false plays only the beeps.
   // Always the same length, so every phone in a Party game starts together.
-  function countdown(parent, o) {
-    o = o || {};
-    var n = o.n || 4;
+  // The rolling letters are random, never the board's own, so nobody gets a head start.
+  function tileLetter(t, c) {
+    t.textContent = c === 'qu' ? 'Qu' : c.toUpperCase();
+    t.classList.toggle('qu', c === 'qu');
+  }
+  function countdown(screenEl, boardEl, o) {
+    var n = o.n, cells = o.cells, tiles = o.tiles;
     return new Promise(function (res) {
-      var ov = document.createElement('div');
-      ov.className = 'overlay center';
-      ov.style.background = 'var(--orange)';
-      ov.innerHTML = '<div class="deal-wrap"><div class="countdown cd-slot" data-cd aria-live="assertive"></div>' +
-        '<div class="deal shake" style="grid-template-columns:repeat(' + n + ',1fr)">' + new Array(n * n + 1).join('<i></i>') + '</div>' +
-        '<p class="deal-cap" data-cap>Mixing the letters\u2026</p></div>';
-      parent.appendChild(ov);
-      var deal = $('.deal', ov), cd = $('[data-cd]', ov), cap = $('[data-cap]', ov);
+      // Nothing can be tapped until GO.
+      var block = document.createElement('div');
+      block.className = 'cd-block';
+      screenEl.appendChild(block);
+      var layer = document.createElement('div');
+      layer.className = 'cd-layer';
+      layer.innerHTML = '<div class="countdown cd-slot" data-cd aria-live="assertive"></div>';
+      boardEl.parentNode.appendChild(layer);
+      var cd = $('[data-cd]', layer);
+      boardEl.classList.add('mixing', 'shaking');
+      tiles.forEach(function (t) { t.classList.add('pre'); t.textContent = ''; t.removeAttribute('aria-label'); });
+      var rolling = [];
+      function randomLetter() { var l = pickLetter(Math.random, o.easy ? BAG_EASY : BAG); return l === 'q' ? 'qu' : l; }
+      var roll = setInterval(function () { rolling.forEach(function (t) { tileLetter(t, randomLetter()); }); }, 90);
       WMSound.roundStart({
         full: o.full !== false, tiles: n * n,
-        drop: function (i) { if (i === 0) { deal.classList.remove('shake'); deal.classList.add('dropping'); } var t = deal.children[i]; if (t) t.classList.add('in'); },
-        beat: function (i) { cap.textContent = ''; cd.textContent = i === 2 ? 'Go!' : String(3 - i); cd.classList.remove('cd-pop'); void cd.offsetWidth; cd.classList.add('cd-pop'); buzz(i === 2 ? 40 : 15); },
-        go: function () { ov.style.pointerEvents = 'none'; ov.classList.add('cd-out'); setTimeout(function () { ov.remove(); }, 320); res(); }
+        drop: function (i) {
+          if (i === 0) boardEl.classList.remove('shaking');
+          var t = tiles[i]; if (!t) return;
+          tileLetter(t, randomLetter());
+          t.classList.remove('pre'); t.classList.add('rolling');
+          t.parentNode.classList.add('drop-in');
+          rolling.push(t);
+        },
+        beat: function (i) { cd.textContent = i === 2 ? 'Go!' : String(3 - i); cd.classList.remove('cd-pop'); void cd.offsetWidth; cd.classList.add('cd-pop'); buzz(i === 2 ? 40 : 15); },
+        go: function () {
+          clearInterval(roll); rolling = [];
+          boardEl.classList.remove('mixing', 'shaking');
+          tiles.forEach(function (t, i) {
+            var c = cells[i];
+            setTimeout(function () {
+              t.classList.remove('pre', 'rolling');
+              t.parentNode.classList.remove('drop-in');
+              tileLetter(t, c);
+              t.setAttribute('aria-label', 'Letter ' + (c === 'qu' ? 'Q U' : c.toUpperCase()));
+              t.classList.add('settle');
+              setTimeout(function () { t.classList.remove('settle'); }, 400);
+            }, (Math.floor(i / n) + (i % n)) * 25);
+          });
+          block.remove();
+          layer.classList.add('cd-out'); setTimeout(function () { layer.remove(); }, 700);
+          res();
+        }
       });
     });
   }
@@ -679,7 +726,7 @@
       '<div style="display:flex;gap:10px">' +
       (timed ? '<div class="stat"><span class="clock" data-clock>0:00</span><div class="bar"><i data-bar></i></div></div>' : '<div class="stat"><span class="clock">Zen</span><span style="font-weight:700;color:var(--muted);font-size:14px">No timer</span></div>') +
       '<div class="count" data-count><b>0</b><small>words</small></div></div></header>' +
-      '<div class="wordbar"><div class="w placeholder" data-word>Swipe to start</div><div class="m" data-msg aria-live="polite">Lift your finger to submit</div></div>' +
+      '<div class="wordbar"><div class="w placeholder" data-word>Get ready\u2026</div><div class="m" data-msg aria-live="polite">Letters are mixing</div></div>' +
       '<div class="board-wrap" data-wrap><div class="hint-row" data-foot></div><div class="board-panel"><div class="board" data-board style="--n:' + n + '"></div></div></div>' +
       '<div class="game-foot"></div>'
     , 'game');
@@ -688,12 +735,9 @@
     var cellsEl = [], tilesEl = [];
     b.cells.forEach(function (c, i) {
       var cell = document.createElement('div');
-      cell.className = 'cell intro';
-      cell.style.animationDelay = ((Math.floor(i / n) + (i % n)) * 0.07) + 's';
+      cell.className = 'cell';
       var t = document.createElement('div');
-      t.className = 'tile' + (c === 'qu' ? ' qu' : '');
-      t.textContent = c === 'qu' ? 'Qu' : c.toUpperCase();
-      t.setAttribute('aria-label', 'Letter ' + (c === 'qu' ? 'Q U' : c.toUpperCase()));
+      t.className = 'tile pre'; // letters arrive when the countdown settles
       cell.appendChild(t); boardEl.appendChild(cell);
       cellsEl.push(cell); tilesEl.push(t);
     });
@@ -951,7 +995,10 @@
     scr.cleanup = function () { ended = true; stop(); };
     boardEl.addEventListener('pointerdown', function (e) { if (!started) e.stopImmediatePropagation(); }, true);
     var api = { forceEnd: finish, el: el, start: start, isEnded: function () { return ended; } };
-    countdown(el, { n: n, full: ambient }).then(start);
+    countdown(el, boardEl, { n: n, full: ambient, cells: b.cells, tiles: tilesEl, easy: b.easy }).then(function () {
+      if (!path.length) { wordEl.textContent = 'Swipe to start'; msgEl.textContent = 'Lift your finger to submit'; }
+      start();
+    });
     return api;
   }
 
@@ -1224,12 +1271,13 @@
       '</div></section>' +
       '<div class="board-wrap" data-wrap><div class="board-panel"><div class="board" data-board style="--n:' + n + '"></div></div></div>', 'game spect');
     var el = scr.el, boardEl = $('[data-board]', el);
+    var specTiles = [];
     board.cells.forEach(function (c, i) {
       var cell = document.createElement('div');
-      cell.className = 'cell intro';
-      cell.style.animationDelay = ((Math.floor(i / n) + (i % n)) * 0.07) + 's';
-      cell.innerHTML = '<div class="tile' + (c === 'qu' ? ' qu' : '') + '">' + (c === 'qu' ? 'Qu' : c.toUpperCase()) + '</div>';
+      cell.className = 'cell';
+      cell.innerHTML = '<div class="tile pre"></div>';
       boardEl.appendChild(cell);
+      specTiles.push(cell.firstChild);
     });
     function layout() {
       var wrap = $('[data-wrap]', el), cs = getComputedStyle(wrap);
@@ -1266,7 +1314,7 @@
     $('[data-menu]', el).onclick = function () {
       confirmBox('Close the game for everyone?', 'Close game', 'Keep going').then(function (y) { if (y) { stop(false); onQuit(); } });
     };
-    countdown(el, { n: board.n || cfg.n, full: true }).then(function () { started = true; last = Date.now(); WMSound.music.want(true); });
+    countdown(el, boardEl, { n: n, full: true, cells: board.cells, tiles: specTiles, easy: board.easy }).then(function () { started = true; last = Date.now(); WMSound.music.want(true); });
     return {
       setCount: function (id, c) {
         var e = $('[data-cnt="' + id + '"]', el);

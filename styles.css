@@ -89,6 +89,7 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); }
+html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { overscroll-behavior: none; -webkit-font-smoothing: antialiased; }
 button, input { font-family: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -198,7 +199,7 @@ h2.title { margin: 0; font-size: 24px; font-weight: 800; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 .board-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 16px 8px; position: relative; }
-.board-panel { padding: 8px; border-radius: 22px; background: var(--board); }
+.board-panel { position: relative; padding: 8px; border-radius: 22px; background: var(--board); }
 .board { position: relative; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); grid-template-rows: repeat(var(--n), minmax(0, 1fr)); gap: var(--gap); touch-action: none; user-select: none; -webkit-user-select: none; }
 .cell { display: flex; }
 .cell.intro { animation: tileIn .8s cubic-bezier(.2,.9,.3,1.25) both; }
@@ -562,6 +563,21 @@ h2.title { margin: 0; font-size: 24px; font-weight: 800; }
 @keyframes dealShake { 0%,100% { transform: translate(0,0) rotate(0); } 25% { transform: translate(-4px,2px) rotate(-1.5deg); } 75% { transform: translate(4px,-2px) rotate(1.5deg); } }
 .deal-cap { margin: 0; color: #FFFFFF; font-size: 20px; font-weight: 800; min-height: 28px; }
 .overlay.cd-out { opacity: 0; transition: opacity .3s; }
+/* Round start on the real board */
+.cd-block { position: absolute; inset: 0; z-index: 20; }
+.cd-layer { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; pointer-events: none; }
+.cd-layer .countdown { color: #FFFFFF; -webkit-text-stroke: 3px var(--orange-dk); paint-order: stroke fill; text-shadow: 0 6px 0 var(--orange-dk), 0 0 24px rgba(0,0,0,.35); }
+.cd-layer.cd-out { opacity: 0; transition: opacity .5s; }
+.board.mixing .cell { border-radius: calc(var(--ts) * .18); background: rgba(0,0,0,.12); }
+.board.shaking { animation: dealShake .16s linear infinite; }
+.tile.pre { opacity: 0; }
+.cell.drop-in { animation: tileDrop .28s cubic-bezier(.3,1.6,.5,1) both; }
+@keyframes tileDrop { from { opacity: 0; transform: translateY(calc(var(--ts) * -.6)) scale(.7); } to { opacity: 1; transform: none; } }
+.tile.rolling { animation: tileRoll .18s linear infinite; }
+@keyframes tileRoll { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+.tile.settle { animation: tileSettle .38s cubic-bezier(.3,1.6,.5,1) both; }
+@keyframes tileSettle { 0% { transform: scale(1.14); background: #FFF6D8; } 100% { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .board.shaking, .cell.drop-in, .tile.rolling, .tile.settle { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .deal.shake, .deal.dropping i.in, .cd-slot.cd-pop { animation: none; } .deal.dropping i.in { opacity: 1; transform: none; } }
 
 /* Sound settings */
