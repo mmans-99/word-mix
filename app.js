@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 21;
+  var APP_VERSION = 22;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   function $(sel, el) { return (el || document).querySelector(sel); }
@@ -39,7 +39,7 @@
 
   // ---------- Storage ----------
   var KEY = 'wordmix.v1';
-  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 8, hint3: true, sound: true, vibrate: true, theme: 'auto' }, boards: {}, daily: {}, deviceId: null, last: { mode: 'classic', size: 4, minLen: 3, partyTime: 180 } };
+  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 8, hint3: true, sound: true, vibrate: true, theme: 'auto' }, boards: {}, shared: {}, daily: {}, deviceId: null, last: { mode: 'classic', size: 4, minLen: 3, partyTime: 180 } };
   var S;
   try { S = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { S = {}; }
   S = Object.assign({}, DEFAULTS, S);
@@ -219,23 +219,94 @@
   var SURVIVAL_START = 60;
   function survivalBonus(len) { return 1 + 2 * pts(len); }
   function boardKey(mode, n) { return mode === 'daily' ? 'daily:' + todayKey() : mode + ':' + n; }
-  function addScore(mode, n, minLen, player, score, words) {
-    if (mode === 'zen') return false;
+  // Two separate sets of scores:
+  //  S.boards  - "This phone": games played on this phone.
+  //  S.shared  - "Everyone": this phone's scores plus scores swapped with other phones in Party games.
+  // Every score has an id so the same score is never counted twice when phones swap.
+  var SHARED_PER_BOARD = 25;
+  function byScore(a, b) { return b.score - a.score || a.at - b.at; }
+  function newId() { return S.deviceId + ':' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function myKey() { return 'd:' + S.deviceId; }
+  S.shared = S.shared || {};
+  if (!S.sharedInit) {
+    // First run with shared scores: give older scores ids and copy them in.
+    Object.keys(S.boards).forEach(function (b) {
+      (S.boards[b] || []).forEach(function (r, i) {
+        if (!r.id) r.id = S.deviceId + ':old' + b + ':' + r.at + ':' + i;
+        if (b !== 'daily:best') S.shared[r.id] = sharedEntry(b, r);
+      });
+    });
+    S.sharedInit = true; save();
+  }
+  function sharedEntry(b, r) {
+    return { id: r.id, b: b, key: r.key || '', name: r.name, avatar: r.avatar, score: r.score, words: r.words, minLen: r.minLen, at: r.at };
+  }
+  // The shared list for one leaderboard, best first. 'daily:best' is built from every daily puzzle.
+  function sharedList(b) {
+    var out = [];
+    Object.keys(S.shared).forEach(function (id) {
+      var r = S.shared[id];
+      if (r.b === b || (b === 'daily:best' && r.b.indexOf('daily:') === 0)) out.push(r);
+    });
+    return out.sort(byScore);
+  }
+  function pruneShared() {
+    var groups = {};
+    Object.keys(S.shared).forEach(function (id) { var r = S.shared[id]; (groups[r.b] = groups[r.b] || []).push(r); });
+    var keepDaily = {};
+    sharedList('daily:best').slice(0, SHARED_PER_BOARD).forEach(function (r) { keepDaily[r.id] = true; });
+    var cutoff = Date.now() - 45 * 864e5;
+    Object.keys(groups).forEach(function (b) {
+      groups[b].sort(byScore).forEach(function (r, i) {
+        var old = b.indexOf('daily:') === 0 && r.at < cutoff && !keepDaily[r.id];
+        if (i >= SHARED_PER_BOARD || old) delete S.shared[r.id];
+      });
+    });
+  }
+  // Adds scores received from another phone. Returns how many were new.
+  function mergeShared(entries) {
+    var added = 0;
+    (Array.isArray(entries) ? entries : []).slice(0, 2000).forEach(function (e) {
+      if (!e || typeof e.id !== 'string' || typeof e.b !== 'string' || S.shared[e.id]) return;
+      if (!/^(classic|blitz|survival|rarity|party):[456]$|^daily:\d{4}-\d\d-\d\d$/.test(e.b)) return;
+      var score = Math.max(0, Math.min(100000, Math.round(+e.score || 0)));
+      S.shared[e.id.slice(0, 80)] = { id: e.id.slice(0, 80), b: e.b, key: String(e.key || '').slice(0, 60), name: String(e.name || 'Player').slice(0, 14), avatar: String(e.avatar || 'fox').slice(0, 20),
+        score: score, words: Math.max(0, Math.round(+e.words || 0)), minLen: +e.minLen === 4 ? 4 : 3, at: +e.at || Date.now() };
+      added++;
+    });
+    if (added) { pruneShared(); save(); }
+    return added;
+  }
+  function allShared() { return Object.keys(S.shared).map(function (id) { return S.shared[id]; }); }
+  // Saves one score to this phone's board and to the shared scores. Returns {best, id, key}.
+  function addScore(mode, n, minLen, player, score, words, opts) {
+    opts = opts || {};
+    if (mode === 'zen') return { best: false };
     var key = boardKey(mode, n);
+    var at = opts.at || Date.now();
+    var r = { id: opts.id || newId(), key: player.key || (player.me || player === S.profile ? myKey() : 'n:' + String(player.name).toLowerCase()),
+      name: player.name, avatar: player.avatar, score: score, words: words, minLen: minLen, at: at };
+    var list = S.boards[key] || [];
+    if (list.some(function (x) { return x.id === r.id; })) return { best: false, id: r.id, key: key };
     if (mode === 'daily') {
       var all = S.boards['daily:best'] || [];
-      all.push({ name: player.name, avatar: player.avatar, score: score, words: words, minLen: minLen, at: Date.now(), day: todayKey() });
-      all.sort(function (a, b) { return b.score - a.score || a.at - b.at; });
+      all.push(Object.assign({ day: todayKey() }, r));
+      all.sort(byScore);
       S.boards['daily:best'] = all.slice(0, 20);
     }
-
-    var list = S.boards[key] || [];
     var prevBest = list.length ? list[0].score : -1;
-    list.push({ name: player.name, avatar: player.avatar, score: score, words: words, minLen: minLen, at: Date.now() });
-    list.sort(function (a, b) { return b.score - a.score || a.at - b.at; });
+    list.push(r);
+    list.sort(byScore);
     S.boards[key] = list.slice(0, 20);
+    S.shared[r.id] = sharedEntry(key, r);
+    pruneShared();
     save();
-    return score > prevBest && score > 0;
+    return { best: score > prevBest && score > 0, id: r.id, key: key };
+  }
+  // Where a saved score ranks: on this phone and with everyone. null if it didn't make the list.
+  function rankOf(id, b) {
+    function pos(list) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return { pos: i + 1, of: list.length }; return null; }
+    return { mine: pos(S.boards[b] || []), all: pos(sharedList(b)) };
   }
 
   // ---------- Word definitions ----------
@@ -864,19 +935,24 @@
       onEnd: function (res) {
         var list = scoreWords(res.words, null, cfg.scoring).sort(function (a, b) { return b.p - a.p || b.w.length - a.w.length; });
         var total = list.reduce(function (a, x) { return a + x.p; }, 0);
-        var best = false, rank = null;
+        var saved = { best: false }, rank = null;
+        var prev = (S.boards[cfg.mode === 'daily' ? 'daily:best' : boardKey(cfg.mode, cfg.n)] || []).filter(function (r) { return r.key === myKey() || (!r.key && r.name === S.profile.name); })[0];
         if (cfg.mode === 'daily') {
           if (!cfg.practice) {
             S.daily[todayKey()] = { score: total, words: list.length };
-            best = addScore('daily', 4, 3, S.profile, total, list.length);
-            var today = S.boards['daily:' + todayKey()] || [];
-            var all = S.boards['daily:best'] || [];
-            rank = { today: 1 + today.filter(function (r) { return r.score > total; }).length, todayN: today.length,
-              ever: 1 + all.filter(function (r) { return r.score > total; }).length, everN: all.length };
+            saved = addScore('daily', 4, 3, S.profile, total, list.length);
+            rank = rankOf(saved.id, saved.key);
+            var ever = rankOf(saved.id, 'daily:best');
+            rank.everMine = ever.mine; rank.everAll = ever.all;
             save();
           }
-        } else best = addScore(cfg.mode, cfg.n, cfg.minLen, S.profile, total, list.length);
-        resultsSolo(cfg, list, total, res, best, rank);
+        } else if (cfg.mode !== 'zen') {
+          saved = addScore(cfg.mode, cfg.n, cfg.minLen, S.profile, total, list.length);
+          rank = rankOf(saved.id, saved.key);
+        }
+        // Personal best = this player's own best before this game.
+        saved.pb = prev ? prev.score : null;
+        resultsSolo(cfg, list, total, res, saved, rank, board);
       }
     });
   }
@@ -897,30 +973,139 @@
     }).join('');
   }
   function fmtTime(ms) { var s = Math.round(ms / 1000), m = Math.floor(s / 60); s %= 60; return m + ':' + (s < 10 ? '0' : '') + s; }
-  function resultsSolo(cfg, list, total, res, best, rank) {
-    var hints = res.hints;
-    var eyebrow = cfg.survival ? 'Out of time' : cfg.time ? 'Time’s up' : 'Round over';
-    var sub = plural(list.length, 'word', 'words') + (cfg.survival ? ' · lasted ' + fmtTime(res.lasted || 0) : '') + (hints ? ' · ' + plural(hints, 'hint', 'hints') + ' used' : '');
-    var badge = '';
-    if (cfg.mode === 'daily') badge = cfg.practice ? '<div class="badge">Practice round, not ranked</div>' : rank ? '<div class="badge">Today: #' + rank.today + ' of ' + rank.todayN + ' · All-time daily: #' + rank.ever + '</div>' : '';
-    else if (best) badge = '<div class="badge">New best score!</div>';
+  // Solo results: the same slow reveal as Party, then personal best and ranks.
+  function resultsSolo(cfg, list, total, res, saved, rank, board) {
+    var scoring = cfg.scoring || 'length', hints = res.hints || 0;
+    var eyebrow = (cfg.survival ? 'Out of time' : cfg.time ? 'Time’s up' : 'Round over') + ' · ' + MODES[cfg.mode].name;
+    var seq = list.slice().sort(function (a, b) { return a.p - b.p || a.w.length - b.w.length; });
+    var topSet = {};
+    // Gold for the highest-scoring word(s), when they're 5+ letters.
+    list.forEach(function (x) { if (x.p === list[0].p && x.w.length >= 5 && Object.keys(topSet).length < 3) topSet[x.w] = true; });
+    var found = {}; list.forEach(function (x) { found[x.w] = true; });
+    var gems = [], longest = '';
+    if (board && board.words) {
+      var bw = Array.from(board.words.keys());
+      gems = bw.filter(function (w) { return !found[w]; }).sort(function (a, b) { return scoreOf(b, scoring) - scoreOf(a, scoring) || b.length - a.length; }).slice(0, 3);
+      longest = bw.sort(function (a, b) { return b.length - a.length || scoreOf(b, scoring) - scoreOf(a, scoring); })[0] || '';
+    }
+    var myLongest = list.slice().sort(function (a, b) { return b.w.length - a.w.length || b.p - a.p; })[0];
+    var hadPB = saved.pb !== null && saved.pb !== undefined;
+    var newPB = total > 0 && (!hadPB || total > saved.pb) && cfg.mode !== 'zen' && !cfg.practice;
+    function rkText(r, limit) { return r ? '#' + r.pos + ' of ' + r.of : 'Outside the top ' + limit; }
+    var statRows = [['Words found', String(list.length)]];
+    if (myLongest) statRows.push(['Longest word', myLongest.w.toUpperCase()]);
+    if (cfg.survival) statRows.push(['Lasted', fmtTime(res.lasted || 0)]);
+    if (hints) statRows.push(['Hints used', String(hints)]);
+    var rankRows = [];
+    if (cfg.mode === 'daily' && cfg.practice) rankRows.push(['Practice round', 'Not ranked']);
+    else if (cfg.mode === 'zen') rankRows.push(['Zen mode', 'Not ranked']);
+    else if (rank) {
+      rankRows.push(['Your best before', hadPB ? String(saved.pb) : 'First game']);
+      if (cfg.mode === 'daily') {
+        rankRows.push(['Today on this phone', rkText(rank.mine, 20)]);
+        rankRows.push(['Today with everyone', rkText(rank.all, SHARED_PER_BOARD)]);
+        rankRows.push(['All-time daily, everyone', rkText(rank.everAll, SHARED_PER_BOARD)]);
+      } else {
+        rankRows.push(['On this phone', rkText(rank.mine, 20)]);
+        rankRows.push(['With everyone', rkText(rank.all, SHARED_PER_BOARD)]);
+      }
+    }
+    function rowsHtml(rows, hidden) {
+      return rows.map(function (r) { return '<div class="stat-row"' + (hidden ? ' data-rank hidden' : '') + '><span>' + esc(r[0]) + '</span><b>' + esc(r[1]) + '</b></div>'; }).join('');
+    }
     var scr = mount(
-      '<header class="band" style="padding-top:calc(26px + env(safe-area-inset-top));padding-bottom:22px;gap:6px">' +
-      '<div class="eyebrow">' + eyebrow + ' · ' + MODES[cfg.mode].name + '</div>' +
+      '<header class="band show-band"><div class="band-row"><div class="eyebrow" style="text-align:left">' + esc(eyebrow) + '</div>' +
+      '<div style="display:flex;gap:8px"><button class="band-btn" data-speed aria-pressed="false">⏩ Speed up</button><button class="band-btn" data-skip>Skip</button></div></div>' +
       '<div class="total" data-total>0</div>' +
-      '<div class="sub">' + sub + '</div>' + badge + '</header>' +
-      '<div class="scroll"><span class="label">Your words \u00b7 tap one to see what it means</span>' + wordRows(list, 0.5) +
-      '<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">' +
-      (cfg.mode === 'daily' ? '<button class="btn btn-blue" data-boards>' + I.trophy + 'Daily leaderboard</button>' : '<button class="btn btn-blue" data-again>' + I.play + 'Play again</button>') +
-      '<button class="btn btn-white" data-home>Home</button></div></div>'
+      '<div class="sub" data-title>Counting your words…</div></header>' +
+      '<div class="scroll"><div class="show">' +
+      '<section class="show-lb"><span class="label">' + esc(S.profile.name) + '</span><div class="card solo-stats"><div class="solo-av">' + avatar(S.profile.avatar, 64) + '</div>' +
+      rowsHtml(statRows, false) + rowsHtml(rankRows, true) + '</div></section>' +
+      '<section class="show-words"><span class="label">Your words · tap one to see what it means</span><div class="stream" data-stream>' +
+      (list.length ? '' : '<p class="empty">No words this round.</p>') + '</div><div data-gems></div></section>' +
+      '</div><div class="show-actions" data-actions hidden></div></div>'
     );
-    setTimeout(function () { tallyUp($('[data-total]', scr.el), total); }, 450);
-    if (best) setTimeout(function () { Snd.cheer(); }, 900);
-    var ag = $('[data-again]', scr.el);
-    if (ag) ag.onclick = function () { playSolo(finalCfg({ mode: cfg.mode, size: cfg.n, minLen: cfg.minLen })); };
-    var lb = $('[data-boards]', scr.el);
-    if (lb) lb.onclick = function () { leaderboards(home, 'daily'); };
-    $('[data-home]', scr.el).onclick = home;
+    var el = scr.el, stream = $('[data-stream]', el), totalEl = $('[data-total]', el), done = false, timers = [], shown = 0;
+    function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+    scr.cleanup = function () { timers.forEach(clearTimeout); };
+    var speed = 1, steps = [], stepAt = 0;
+    function step(after, fn) { steps.push({ after: after, fn: fn }); }
+    function runSteps() {
+      if (stepAt >= steps.length) return;
+      var st = steps[stepAt++];
+      later(function () { st.fn(); runSteps(); }, st.after / speed);
+    }
+    function wordEl(x, instant) {
+      var d = document.createElement('div');
+      var top = topSet[x.w];
+      d.className = 'sw' + (instant ? ' settled ' + (top ? 'gold' : 'ok') : ' in');
+      d.setAttribute('data-def', x.w); d.setAttribute('role', 'button'); d.tabIndex = 0;
+      d.innerHTML = '<span class="ww"><b>' + esc(x.w.toUpperCase()) + '</b></span><span class="tag">' + (top ? 'Top word' : '') + '</span><span class="pts">+' + x.p + '</span>' +
+        (top && !instant ? '<span class="sparks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' : '');
+      return d;
+    }
+    var gap = Math.max(650, Math.min(1500, 30000 / Math.max(1, seq.length)));
+    step(1000, function () {});
+    seq.forEach(function (x) {
+      var d;
+      step(gap * 0.4, function () { d = wordEl(x, false); stream.insertBefore(d, stream.firstChild); });
+      step(gap * 0.6, function () {
+        d.classList.remove('in'); d.classList.add(topSet[x.w] ? 'gold' : 'ok');
+        if (topSet[x.w]) { Snd.tone(1318, 0.12, 'sine', 0.06); Snd.tone(1760, 0.18, 'sine', 0.05, 0.08); } else Snd.tone(660 + Math.min(8, x.p) * 60, 0.08, 'triangle', 0.03);
+        var old = shown; shown += x.p;
+        animateNum(totalEl, old, shown, 600 / speed);
+      });
+    });
+    function showGems(animated) {
+      if (!gems.length && !longest) return;
+      var g = $('[data-gems]', el);
+      g.innerHTML = '<div class="card gems' + (animated ? ' pop-in' : '') + '"><div class="missed">Missed opportunity!</div>' +
+        (longest ? '<div class="gem-long" data-def="' + esc(longest) + '" role="button" tabindex="0"><small>Longest word on the board</small><b>' + esc(longest.toUpperCase()) + '</b><span>' + longest.length + ' letters · ' + plural(scoreOf(longest, scoring), 'point', 'points') +
+          (found[longest] ? ' · you found it!' : ' · you missed it') + '</span></div>' : '') +
+        gems.map(function (w, i) { return '<div class="gem" data-def="' + esc(w) + '" role="button" tabindex="0" style="animation-delay:' + (animated ? 0.4 + i * 0.25 : 0) + 's"><b>' + esc(w.toUpperCase()) + '</b><span class="pts">' + plural(scoreOf(w, scoring), 'pt', 'pts') + '</span></div>'; }).join('') + '</div>';
+      if (animated) { Snd.tone(392, 0.2, 'triangle', 0.05); Snd.tone(330, 0.3, 'triangle', 0.05, 0.18); }
+    }
+    function finalTitle(animated) {
+      var t = $('[data-title]', el);
+      t.textContent = total === 0 ? 'No words this time. Have another go!' : newPB ? 'New personal best!' : plural(list.length, 'word', 'words') + ' · ' + plural(total, 'point', 'points');
+      if (newPB) t.classList.add('pb-title');
+      if (animated) t.classList.add('pop-in');
+      $$('[data-rank]', el).forEach(function (r, i) { r.hidden = false; if (animated) { r.classList.add('pop-in'); r.style.animationDelay = (i * 0.15) + 's'; } });
+      if (newPB && animated) { confetti(el); Snd.cheer(); buzz(60); }
+    }
+    function finish() {
+      if (done) return;
+      done = true;
+      var sk = $('[data-skip]', el); if (sk) sk.remove();
+      var sp = $('[data-speed]', el); if (sp) sp.remove();
+      var a = $('[data-actions]', el);
+      a.innerHTML = (cfg.mode === 'daily' ? '<button class="btn btn-blue" data-boards>' + I.trophy + 'Daily leaderboard</button>' : '<button class="btn btn-blue" data-again>' + I.play + 'Play again</button>' +
+        (cfg.mode !== 'zen' ? '<button class="btn btn-white" data-boards>' + I.trophy + 'Leaderboards</button>' : '')) +
+        '<button class="btn btn-white" data-home>Home</button>';
+      a.hidden = false; a.classList.add('pop-in');
+      var ag = $('[data-again]', a);
+      if (ag) ag.onclick = function () { playSolo(finalCfg({ mode: cfg.mode, size: cfg.n, minLen: cfg.minLen })); };
+      var lb = $('[data-boards]', a);
+      if (lb) lb.onclick = function () { leaderboards(home, cfg.mode, cfg.n); };
+      $('[data-home]', a).onclick = home;
+    }
+    step(1300, function () { showGems(true); });
+    step(1800, function () { totalEl.textContent = total; finalTitle(true); });
+    step(1600, finish);
+    runSteps();
+    $('[data-speed]', el).onclick = function (e) {
+      speed = speed === 1 ? 3 : 1;
+      var b = e.currentTarget;
+      b.setAttribute('aria-pressed', String(speed > 1));
+      b.textContent = speed > 1 ? '▶ Normal speed' : '⏩ Speed up';
+    };
+    $('[data-skip]', el).onclick = function () {
+      timers.forEach(clearTimeout); timers = [];
+      if (list.length) stream.innerHTML = '';
+      seq.slice().reverse().forEach(function (x) { stream.appendChild(wordEl(x, true)); });
+      totalEl.textContent = total;
+      showGems(false); finalTitle(false); finish();
+    };
   }
 
   // ---------- Pass and play ----------
@@ -929,7 +1114,7 @@
     var board = makeBoard(cfg.n, cfg.minLen, cfg.seed);
     var results = [];
     function turn(i) {
-      if (i >= players.length) return resultsShow(cfg, players.map(function (p, k) { return { key: p.name.toLowerCase(), name: p.name, avatar: p.avatar, words: results[k].words, hints: results[k].hints }; }), {
+      if (i >= players.length) return resultsShow(cfg, players.map(function (p, k) { return { key: 'n:' + p.name.toLowerCase(), name: p.name, avatar: p.avatar, words: results[k].words, hints: results[k].hints }; }), {
         board: board, session: session, save: true,
         actions: [
           { label: 'Next round', cls: 'btn-blue', icon: I.play, run: function () { playPass(cfg, players, session); } },
@@ -1085,8 +1270,12 @@
   function resultsShow(cfg, players, opts) {
     var scoring = cfg.scoring || 'length';
     var R = computeRound(players, scoring);
-    if (opts.save) R.rows.forEach(function (r) { addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
-    if (opts.saveMine) R.rows.forEach(function (r) { if (r.p.me) addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length); });
+    // Every player's score goes on this phone's Party leaderboard. The round id stops the same
+    // score being counted twice when phones swap scores.
+    if (opts.save) {
+      var rid = opts.rid || newId(), at = opts.at || Date.now();
+      R.rows.forEach(function (r) { addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length, { id: rid + ':' + (r.p.key || r.p.name), at: at }); });
+    }
     var table = opts.session ? updateSession(opts.session, R.rows) : (opts.totals || []);
     var round = opts.session ? opts.session.round : (opts.round || 1);
     var P = players.map(function (p, i) { return { p: p, key: p.key || p.id || p.name, idx: i, score: 0, final: 0, total: 0 }; });
@@ -1255,8 +1444,9 @@
   }
 
   // ---------- Leaderboards ----------
-  function leaderboards(back, startTab) {
-    var tab = startTab || 'classic', size = 4;
+  var lbScope = 'mine';
+  function leaderboards(back, startTab, startSize) {
+    var tab = startTab && startTab !== 'zen' ? startTab : 'classic', size = startSize || 4;
     var scr = mount(backBand('Leaderboards') + '<div class="scroll" data-body></div>');
     on(scr.el, '[data-back]', 'click', back);
     function rowsHtml(list, showDay) {
@@ -1266,21 +1456,25 @@
           '<span class="nm"><b>' + esc(r.name) + '</b><small>' + plural(r.words, 'word', 'words') + (r.minLen === 4 ? ' · 4+ letters' : '') + ' · ' + d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + '</small></span><span class="sc">' + r.score + '</span></div>';
       }).join('') : '<p class="empty">No scores yet. Play a round to get on the board!</p>';
     }
+    function get(b) { return lbScope === 'all' ? sharedList(b) : (S.boards[b] || []); }
     function render() {
       var tabs = ['classic', 'blitz', 'survival', 'rarity', 'party', 'daily'];
       var names = { classic: 'Classic', blitz: 'Blitz', survival: 'Survival', rarity: 'Rarity', party: 'Party', daily: 'Daily' };
-      var html = '<div class="seg tabs">' + tabs.map(function (m) { return '<button data-tab="' + m + '" aria-pressed="' + (tab === m) + '">' + names[m] + '</button>'; }).join('') + '</div>';
+      var html = '<div class="seg scope">' +
+        '<button data-scope="mine" aria-pressed="' + (lbScope === 'mine') + '">This phone</button><button data-scope="all" aria-pressed="' + (lbScope === 'all') + '">Everyone</button></div>' +
+        '<p class="hint-text">' + (lbScope === 'all' ? 'Scores from this phone plus every phone you\u2019ve played Party with. Phones swap scores automatically when they play together.' : 'Scores from games played on this phone.') + '</p>' +
+        '<div class="seg tabs">' + tabs.map(function (m) { return '<button data-tab="' + m + '" aria-pressed="' + (tab === m) + '">' + names[m] + '</button>'; }).join('') + '</div>';
       if (tab === 'daily') {
-        html += '<span class="label">Today’s puzzle</span><p class="hint-text">Only each player’s first try counts.</p>' + rowsHtml(S.boards['daily:' + todayKey()] || []) +
-          '<span class="label" style="margin-top:8px">Best daily scores ever</span>' + rowsHtml(S.boards['daily:best'] || []);
+        html += '<span class="label">Today’s puzzle</span><p class="hint-text">Only each player’s first try counts.</p>' + rowsHtml(get('daily:' + todayKey())) +
+          '<span class="label" style="margin-top:8px">Best daily scores ever</span>' + rowsHtml(get('daily:best'));
       } else {
         html += '<div class="seg">' + [4, 5, 6].map(function (n) { return '<button data-size="' + n + '" aria-pressed="' + (size === n) + '">' + n + ' × ' + n + '</button>'; }).join('') + '</div>' +
-          (tab === 'party' ? '<p class="hint-text">Party scores from this phone’s players.</p>' : '') +
-          rowsHtml(S.boards[tab + ':' + size] || []);
+          rowsHtml(get(tab + ':' + size));
       }
       var body = $('[data-body]', scr.el);
       body.innerHTML = html;
       on(body, '[data-tab]', 'click', function (e) { tab = e.currentTarget.getAttribute('data-tab'); render(); });
+      on(body, '[data-scope]', 'click', function (e) { lbScope = e.currentTarget.getAttribute('data-scope'); render(); });
       on(body, '[data-size]', 'click', function (e) { size = +e.currentTarget.getAttribute('data-size'); render(); });
     }
     render();
@@ -1324,7 +1518,7 @@
       on(body, '[data-tg]', 'click', function (e) { var k = e.currentTarget.getAttribute('data-tg'); st[k] = !st[k]; save(); render(); if (k === 'vibrate') buzz(20); });
       $('[data-profile]', body).onclick = function () { editMyProfile(function () { settings(back); }); };
       $('[data-clear]', body).onclick = function () {
-        confirmBox('Clear all leaderboard scores on this phone?', 'Clear scores', 'Cancel').then(function (y) { if (y) { S.boards = {}; S.daily = {}; save(); toast('Leaderboards cleared'); } });
+        confirmBox('Clear all leaderboard scores on this phone? This clears both This phone and Everyone.', 'Clear scores', 'Cancel').then(function (y) { if (y) { S.boards = {}; S.shared = {}; S.daily = {}; save(); toast('Leaderboards cleared'); } });
       };
     }
     function toggle(key, label, val) { return '<div class="toggle-row"><span id="tl-' + key + '">' + label + '</span><button class="switch" role="switch" aria-labelledby="tl-' + key + '" aria-checked="' + val + '" data-tg="' + key + '"></button></div>'; }
@@ -1406,10 +1600,16 @@
     WMQR.toCanvas(c, code, { size: Math.max(220, w), dark: '#2E2117' });
   }
   function send(dc, msg) { try { if (dc && dc.readyState === 'open') dc.send(JSON.stringify(msg)); } catch (e) {} }
+  // Sends this phone's shared leaderboard in small pieces. The last piece is marked so the host can reply with its own.
+  function sendShared(dc) {
+    var all = allShared(), size = 80;
+    if (!all.length) { send(dc, { t: 'sync', entries: [], last: true }); return; }
+    for (var i = 0; i < all.length; i += size) send(dc, { t: 'sync', entries: all.slice(i, i + size), last: i + size >= all.length });
+  }
 
   // Host
   function hostLobby(cfg) {
-    var me = { id: 'h', key: 'h', name: S.profile.name, avatar: S.profile.avatar, me: true };
+    var me = { id: 'h', key: myKey(), name: S.profile.name, avatar: S.profile.avatar, me: true };
     var guests = [];
     var pending = null, busy = false, inGame = false, closed = false, gen = 0, guestSeq = 0;
     var round = null;
@@ -1450,6 +1650,9 @@
             broadcast(lobbyMsg());
             if (!inGame) newOffer();
           }
+        } else if (m.t === 'sync') {
+          mergeShared(m.entries);
+          if (m.last) sendShared(g.dc);
         } else if (m.t === 'count') {
           if (spectator) spectator.setCount(g.id, +m.n || 0);
         } else if (m.t === 'ready') {
@@ -1548,9 +1751,10 @@
           return { id: p.id, key: p.key, name: p.name, avatar: p.avatar, words: p.id === 'h' ? round.myWords : (round.done[p.id] || []) };
         });
         var mine = res.map(function (r) { return Object.assign({}, r, { me: r.id === 'h' }); });
+        var rid = newId(), at = Date.now();
         inGame = false;
         resultsApi = resultsShow(cfg, mine, {
-          board: round.board, session: session, saveMine: !cfg.screenOnly,
+          board: round.board, session: session, save: true, rid: rid, at: at,
           note: 'Players tap Ready on their phones. You can start whenever you like.',
           actions: [
             { label: 'Start next round', cls: 'btn-blue', icon: I.play, run: function () { if (!guests.length) { toast('Everyone has left. Go back to the lobby to add players.'); return; } startRound(); } },
@@ -1558,7 +1762,9 @@
             { label: 'Close game', run: function () { teardown(); home(); } }
           ]
         });
-        broadcast({ t: 'results', players: res, mode: cfg.mode, n: cfg.n, minLen: cfg.minLen, scoring: cfg.scoring, round: resultsApi.round, totals: resultsApi.table });
+        broadcast({ t: 'results', players: res, mode: cfg.mode, n: cfg.n, minLen: cfg.minLen, scoring: cfg.scoring, round: resultsApi.round, totals: resultsApi.table, rid: rid, at: at });
+        // Then swap leaderboards so every phone has everyone's scores.
+        setTimeout(function () { guests.forEach(function (g) { sendShared(g.dc); }); }, 1500);
       };
       broadcast({ t: 'start', cells: board.cells, n: cfg.n, minLen: cfg.minLen, mode: cfg.mode, time: cfg.time, scoring: cfg.scoring, players: everyone });
       function collecting() {
@@ -1609,7 +1815,7 @@
         });
         l.dcPromise.then(function (ch) {
           dc = ch;
-          ch.onopen = function () { send(dc, { t: 'hello', name: S.profile.name, avatar: S.profile.avatar, did: S.deviceId }); };
+          ch.onopen = function () { send(dc, { t: 'hello', name: S.profile.name, avatar: S.profile.avatar, did: S.deviceId }); sendShared(dc); };
           if (ch.readyState === 'open') ch.onopen();
           ch.onmessage = onMsg;
           ch.onclose = function () { if (!closed) { closed = true; toast('Lost connection to the host'); home(); } };
@@ -1629,6 +1835,7 @@
     function onMsg(e) {
       var m; try { m = JSON.parse(e.data); } catch (err) { return; }
       if (m.t === 'welcome') { myId = m.id; }
+      else if (m.t === 'sync') { mergeShared(m.entries); }
       else if (m.t === 'lobby') { if (!game || game.isEnded()) lobby(m); else { hostPlayers = m.players; } }
       else if (m.t === 'start') {
         var cfg = { mode: m.mode, n: m.n, minLen: m.minLen, time: m.time, scoring: m.scoring || 'length' };
@@ -1649,7 +1856,7 @@
         var players = (m.players || []).map(function (p) { return { id: p.id, key: p.key, name: String(p.name).slice(0, 14), avatar: p.avatar, words: (p.words || []).map(String), me: p.id === myId }; });
         var cfg2 = { mode: m.mode, n: m.n, minLen: m.minLen, scoring: m.scoring || 'length', time: MODES[m.mode] ? MODES[m.mode].time : 0 };
         setTimeout(function () {
-          resultsShow(cfg2, players, { board: lastBoard, totals: m.totals || [], round: m.round || 1, saveMine: true,
+          resultsShow(cfg2, players, { board: lastBoard, totals: m.totals || [], round: m.round || 1, save: true, rid: typeof m.rid === 'string' ? m.rid.slice(0, 60) : null, at: +m.at || Date.now(),
             note: 'The host starts the next round.',
             onReady: function () { send(dc, { t: 'ready' }); },
             actions: [{ label: 'Leave game', run: function () { confirmBox('Leave this game?', 'Leave', 'Stay').then(function (y) { if (y) { leave(); home(); } }); } }] });

@@ -527,3 +527,16 @@ h2.title { margin: 0; font-size: 24px; font-weight: 800; }
 .loser-line { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 6px 14px 6px 6px; border-radius: 999px; background: rgba(0,0,0,.35); color: #FFF3D9; font-weight: 800; font-size: 16px; animation: dialogIn .6s 1.2s cubic-bezier(.3,1.4,.5,1) both; }
 .loser-line svg { filter: grayscale(.6); }
 .band-btn[aria-pressed="true"] { background: #FFF3D9; color: #3A2614; }
+
+/* Solo results */
+.sw.ok .pts, .sw.ok .tag { opacity: 1; transform: none; }
+.sw.ok:not(.settled) { animation: okPop .45s cubic-bezier(.3,1.5,.5,1) both; }
+@keyframes okPop { 0% { transform: scale(.96); } 60% { transform: scale(1.03); } 100% { transform: none; } }
+.solo-stats { gap: 0; }
+.solo-av { align-self: center; margin-bottom: 6px; }
+.stat-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 2px dashed var(--card-sh); }
+.stat-row span { font-size: 15px; font-weight: 600; color: var(--muted); }
+.stat-row b { font-size: 18px; font-weight: 800; text-align: right; overflow-wrap: anywhere; }
+.stat-row[hidden] { display: none; }
+.pb-title { color: #FFFFFF; font-size: 22px; font-weight: 800; }
+.seg.scope button { min-height: 44px; }
