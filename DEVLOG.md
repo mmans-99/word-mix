@@ -2,7 +2,7 @@
 
 Newest first. Each version commit adds an entry here.
 
-## Version 26: 6 Nov 2026
+## Version 26: 6 Nov 2026 (commit fa98904)
 
 **Why:** in Party, the host's and players' results ran at different speeds (each phone had its own Speed up), and a child playing Normal boards still found it hard.
 

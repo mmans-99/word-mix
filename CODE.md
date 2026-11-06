@@ -55,7 +55,7 @@ Plain HTML, CSS and JavaScript, with no build step and no framework. All code is
     - `playBoard(opts)` is the play screen. `opts.onWord(count, {score, long})`, `opts.childHints()` → `{maxLen, others}`, and `onEnd` gets `{words, hints, hinted, lasted}`. Tiles start as `.tile.pre` and empty. It includes layout, swipe handling (pointer events, `adj()`, backtrack by sliding back, `badMove` sound), the trail SVG, submit, the timer (Survival `addTime`), the last-10-seconds urgency, music, hints (`hintMenu`, pool by child or easy), the ☰ pause menu (`soundSwitches()` / `bindSoundSwitches()`) and `finish()`. `opts.ambient` is false on Party player phones (no music or ticking). It returns `{forceEnd, el, start, isEnded}`.
 13. **Scoring:** `scoreWords(words, uniqueSet, scoring, mult)` (mult is a number or a function of the word), `wordMult(p, w, hintedSet)` (2 for a child's own words, 1 for hinted words and adults), `childMult(p)` and `KID_COOLDOWN` (5000ms).
 14. **Solo:** `playSolo(cfg)`, `tallyUp`, `wordRows`, `fmtTime`, `resultsSolo(...)` (animated reveal, missed words, personal best and ranks).
-15. **Pass and play:** `playPass(...)`.
+15. **Pass and play:** `playPass(cfg, players, session)`. A child player's `childHints` uses the longest word and average score of the players who went before; results pass `hinted` through to `resultsShow` (role `'local'`).
 16. **Party results:** `computeRound(players, scoring)` (counts, unique set, finders, rows), `roundLabels(rows)` (winner and loser keys), `updateSession(session, rows, scoring)` (per-player session facts and `session.labels`), `standings`, `triviaLines(session)` (`[{h, b, av}]`), `triviaCard(lines)` (cycles every 4s), `cleanTrivia` / `cleanLabels` (check host data) and `roundLoading(round, players, labels, lines, ms)` (the between-rounds screen, `NEXT_WAIT` = 5000ms).
 17. **Big screen:** `spectate(board, cfg, players, roundNo, onEnd, onQuit)` shows live counts, uses the same countdown, and plays music.
 18. **Animated results:** `animateNum`, `confetti`, `BAR_COLS`, `resultsShow(cfg, players, opts)`, the bar battle:
@@ -67,6 +67,8 @@ Plain HTML, CSS and JavaScript, with no build step and no framework. All code is
 20. **Hint and sound controls:** `soundSwitches`, `bindSoundSwitches`, `soundSettings`, `bindSoundSettings` (sliders `data-vol`, choices `data-sndg` / `data-sndv` → `WMSound.preview`), `hintControls`, `bindHintControls`.
 21. **Settings:** `settings()`.
 22. **Nearby play:** `nearby()`, `openScanner`, `codeFallback`, `netWarning`, `liveDiag` (hidden diagnostics), `qrHtml` / `drawQr`, `send`, `sendShared`, `hostLobby(cfg)`, `joinGame()`.
+    - `hostLobby`: `liveUpdate(id, score, long)` keeps `round.live` and broadcasts `live`; `hostHintInfo()` feeds the host's own child hints; `nextRound()` broadcasts `next`, shows `roundLoading` and then calls `startRound()` (which goes back to the lobby if everyone has left). `round` holds `done`, `hinted`, `live`, `maxLen`, `myWords` and `myHinted`. Results use role `'host'` and broadcast `rstep` / `rspeed` / `rskip` tagged with the round id.
+    - `joinGame`: `show` is the current results show, `showRid` its round id and `ctl` the host's step, speed and skip that arrived early. `live` holds the host's `live` message for this phone's child hints (other players' average excludes `myId`).
 23. **Boot:** `boot()`. `window.WordMix` exposes `solve`, `makeBoard`, `computeRound`, `isEasyWord` and `state()` for tests.
 
 ## Party messages (JSON over the WebRTC data channel)

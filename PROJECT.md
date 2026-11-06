@@ -13,7 +13,7 @@ A Boggle-style word game for the family, played on phones. Swipe across touching
 - Colourful and bright but not childish, and not the usual "AI look". Warm palette in the direction of Scrabble GO. Font: Bricolage Grotesque.
 - All tiles are one colour. The user dislikes multi-coloured tiles.
 - Colour themes: Original and Dark, with Auto following the phone's dark mode. The Original colours are protected so browser dark modes (Samsung Internet) don't repaint them.
-- Slow, satisfying animations. Results reveal slowly, with a Speed up button and Skip.
+- Slow, satisfying animations. Results reveal slowly, with a Speed up button and Skip (in Party, only the host has them, and they change every screen).
 - Opening screen with player names, avatars and the mode choice.
 - No pinch zoom on phones (v25). Double-tap zoom is off too.
 - British spellings only.
