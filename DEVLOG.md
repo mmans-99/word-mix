@@ -2,6 +2,24 @@
 
 Newest first. Each version commit adds an entry here.
 
+## Version 26: 6 Nov 2026
+
+**Why:** in Party, the host's and players' results ran at different speeds (each phone had its own Speed up), and a child playing Normal boards still found it hard.
+
+**Changes:**
+- **Party results follow the host.** The host's screen (or the big screen) runs the reveal and sends each step to the phones (`rstep`), so every screen shows the same word at the same time. Speed up and Skip are only on the host and change every screen (`rspeed`, `rskip`). A phone that hears nothing from the host for 6 seconds finishes on its own.
+- **Default reveal about 15% quicker:** each word 0.95–1.55s (was 1.1–1.8s).
+- **Bar battle results** for Party and pass-and-play: a bar per player with avatar and name underneath. Each word pops up above the bars, then flies into the bars of whoever found it, and the bars rise.
+- **Each round is scored on its own.** The overall-totals view is gone and the bars stay up at the end.
+- **Crown and poop labels:** 👑 Winner for the top score, 💩 Loser for the lowest. They stay with those players into the next round and move across (or bounce) when the result changes.
+- **Session trivia card**, cycling every 4 seconds: most words, longest word, most unusual word, most unique words, most wins, most 💩s, best single round, best average, and each player's summary.
+- **Loading screen between Party rounds:** when the host taps Start next round, every phone shows "Round N, Get ready…" for 5 seconds with the players, their labels and the trivia, then the round starts. Ready ticks show under each player's bar on the host.
+- **Child hints in Party and pass-and-play:**
+  - The Hint button is always there and refills over 5 seconds after a hint. It's ready straight away when the child finds a word on their own.
+  - Hint size follows the longest word anyone has found so far (in pass-and-play, the players before the child). It leans longer the further behind the child is, using live scores that phones now send with `count` and the host passes back in `live`.
+  - Words found from a hint aren't doubled for the child. Solo hints are unchanged.
+- Tests: `test_child.py` and `test_big_screen.py` updated for the new results; new `test_pass_hints.py`. The big-screen test now waits for the 3-2-1 before swiping.
+
 ## Version 25: 6 Nov 2026 (commit 1c1f21b)
 
 **Why:** the user found 5-letter words much rarer than in Boggle.

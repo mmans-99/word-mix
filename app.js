@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 25;
+  var APP_VERSION = 26;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   // No pinch zoom. Android follows the viewport tag; iPhone ignores it, so it is
@@ -823,7 +823,9 @@
       foundSet.add(w); found.push(w);
       setMsg(['Nice!', 'Got it!', 'Good one!', 'Yes!', 'Lovely!'][found.length % 5], 'good', W);
       if (cfg.survival) addTime(survivalBonus(w.length));
-      if (opts.onWord) opts.onWord(found.length);
+      // A word the child found on their own makes the Hint button ready again straight away.
+      if (kid && !hintedSet.has(w)) kidReadyAt = 0;
+      if (opts.onWord) opts.onWord(found.length, liveStats());
       Snd.good(w.length); buzz(15);
       var cnt = $('[data-count]', el); $('b', cnt).textContent = found.length;
       cnt.classList.remove('pop'); void cnt.offsetWidth; cnt.classList.add('pop');
@@ -858,6 +860,48 @@
     boardEl.addEventListener('pointerup', up);
     boardEl.addEventListener('pointercancel', up);
 
+    // Child hints (Party and pass-and-play only): the Hint button is always there. After a hint it
+    // refills over KID_COOLDOWN ms, or straight away when the child finds a word on their own.
+    // opts.childHints() returns {maxLen, others}: the longest word anyone has found so far and the
+    // average score of the other players. The hint size grows with maxLen and leans longer the
+    // further behind the child is.
+    var kid = !!(opts.childHints && opts.player && opts.player.child);
+    var hintedSet = new Set(), kidReadyAt = 0, kidShown = false;
+    function liveStats() {
+      var sc = 0, lg = 0;
+      found.forEach(function (w) { sc += scoreOf(w, cfg.scoring) * wordMult(opts.player, w, hintedSet); if (w.length > lg) lg = w.length; });
+      return { score: sc, long: lg };
+    }
+    function showKidBtn() {
+      kidShown = true;
+      foot.innerHTML = '<button class="hint-btn kid" data-hint aria-label="Show a hint"><span class="kid-fill" data-kfill></span>' + I.bulb + '<span>Hint</span></button>';
+      $('[data-hint]', foot).onclick = function () {
+        if (Date.now() < kidReadyAt) { var bt = $('[data-hint]', foot); bt.classList.remove('nope'); void bt.offsetWidth; bt.classList.add('nope'); return; }
+        useHint();
+      };
+    }
+    function kidPick() {
+      var info = opts.childHints() || {}, live = liveStats();
+      var lo = Math.max(3, b.minLen);
+      var hi = Math.max(lo, info.maxLen || 0, live.long);
+      var byLen = {};
+      b.words.forEach(function (p, w) {
+        if (foundSet.has(w) || hintedSet.has(w) || w.length > hi || (b.easy && !isEasyWord(w))) return;
+        (byLen[w.length] = byLen[w.length] || []).push([w, p]);
+      });
+      var lens = Object.keys(byLen).map(Number);
+      if (!lens.length) return null;
+      // boost 0 = ahead (short hints), 0.5 = level, 1 = well behind (longest allowed).
+      var others = info.others || 0, boost = 0;
+      if (others > 0) boost = Math.max(0, Math.min(1, 0.5 + (others - live.score) / Math.max(others, 6)));
+      var target = lo + boost * (hi - lo), tot = 0;
+      var wts = lens.map(function (L) { var d = L - target, x = Math.exp(-d * d / 1.2) + 0.04; tot += x; return x; });
+      var r = Math.random() * tot, k = 0;
+      while (k < lens.length - 1 && r > wts[k]) { r -= wts[k]; k++; }
+      var list = byLen[lens[k]];
+      return list[Math.floor(Math.random() * list.length)];
+    }
+
     // Hints: after a touch, wait for the idle delay; then offer a Hint button for 3 seconds.
     var lastTouch = Date.now(), armed = true, hintBtnUntil = 0, hintGlowUntil = 0, hintPath = null;
     function touched() { lastTouch = Date.now(); armed = true; if (hintBtnUntil) hideHintBtn(); }
@@ -874,6 +918,20 @@
       if (btn) { btn.classList.add('out'); setTimeout(function () { if (!hintBtnUntil) foot.innerHTML = ''; }, 450); }
     }
     function useHint() {
+      if (kid) {
+        if (hintPath) clearHintGlow();
+        var pick = kidPick();
+        if (!pick) { setMsg('No more hints on this board', 'hint'); return; }
+        hintsUsed++;
+        hintedSet.add(pick[0]);
+        kidReadyAt = Date.now() + KID_COOLDOWN;
+        hintPath = pick[1];
+        hintPath.forEach(function (i) { tilesEl[i].classList.add('hinted'); });
+        hintGlowUntil = Date.now() + 3000;
+        setMsg('Hint: trace the glowing tiles', 'hint');
+        Snd.tone(988, 0.15, 'sine', 0.06);
+        return;
+      }
       hideHintBtn();
       lastTouch = Date.now(); armed = true;
       var pool = [];
@@ -934,6 +992,16 @@
         if (left <= 0) { finish(); return; }
       }
       if (hintGlowUntil && now >= hintGlowUntil) clearHintGlow();
+      if (kid) {
+        if (kidShown) {
+          var kf = $('[data-kfill]', foot), left2 = kidReadyAt - now;
+          if (kf) {
+            kf.style.transform = 'scaleX(' + (left2 > 0 ? 1 - left2 / KID_COOLDOWN : 1) + ')';
+            kf.parentNode.classList.toggle('cooling', left2 > 0);
+          }
+        }
+        return;
+      }
       if (hintBtnUntil && now >= hintBtnUntil) hideHintBtn();
       var delay = S.settings.hintDelay;
       if (!paused && delay > 0 && armed && !dragging && !hintBtnUntil && !hintPath && now - lastTouch >= delay * 1000) { armed = false; showHintBtn(); }
@@ -990,7 +1058,9 @@
       setMsg(timed ? 'Time’s up!' : 'Round over', 'good');
       if (timed) WMSound.timesUp(); else WMSound.ding();
       buzz(60);
-      setTimeout(function () { opts.onEnd({ words: found.slice(), hints: hintsUsed, lasted: elapsed }); }, 1100);
+      kidShown = false;
+      var hinted = found.filter(function (w) { return hintedSet.has(w); });
+      setTimeout(function () { opts.onEnd({ words: found.slice(), hints: hintsUsed, hinted: hinted, lasted: elapsed }); }, 1100);
     }
     scr.cleanup = function () { ended = true; stop(); };
     boardEl.addEventListener('pointerdown', function (e) { if (!started) e.stopImmediatePropagation(); }, true);
@@ -998,22 +1068,32 @@
     countdown(el, boardEl, { n: n, full: ambient, cells: b.cells, tiles: tilesEl, easy: b.easy }).then(function () {
       if (!path.length) { wordEl.textContent = 'Swipe to start'; msgEl.textContent = 'Lift your finger to submit'; }
       start();
+      if (kid && !ended) showKidBtn();
     });
     return api;
   }
 
   // In Party mode a word nobody else found scores double.
+  // mult is a number, or a function of the word.
   function scoreWords(words, uniqueSet, scoring, mult) {
     mult = mult || 1;
     return words.map(function (w) {
       var base = scoreOf(w, scoring);
       if (!uniqueSet) return { w: w, p: base };
       var u = uniqueSet.has(w);
-      return { w: w, p: (u ? base * 2 : base) * mult, unique: u, shared: !u };
+      return { w: w, p: (u ? base * 2 : base) * (typeof mult === 'function' ? mult(w) : mult), unique: u, shared: !u };
     });
   }
   // Child profiles score double in Party and pass-and-play, so they can keep up with grown-ups.
-  function childMult(p) { return p && p.child ? 2 : 1; }
+  // Words they found from a hint score like anyone else's (v26).
+  var KID_COOLDOWN = 5000;
+  function wordMult(p, w, hintedSet) {
+    if (!p || !p.child) return 1;
+    var h = hintedSet || p.hinted;
+    if (h && (h.has ? h.has(w) : h.indexOf(w) >= 0)) return 1;
+    return 2;
+  }
+  function childMult(p) { return function (w) { return wordMult(p, w); }; }
   // ---------- Solo ----------
   function playSolo(cfg) {
     var board = makeBoard(cfg.n, cfg.minLen, cfg.seed, cfg.easy);
@@ -1201,7 +1281,7 @@
     var board = makeBoard(cfg.n, cfg.minLen, cfg.seed, cfg.easy);
     var results = [];
     function turn(i) {
-      if (i >= players.length) return resultsShow(cfg, players.map(function (p, k) { return { key: 'n:' + p.name.toLowerCase(), name: p.name, avatar: p.avatar, child: !!p.child, words: results[k].words, hints: results[k].hints }; }), {
+      if (i >= players.length) return resultsShow(cfg, players.map(function (p, k) { return { key: 'n:' + p.name.toLowerCase(), name: p.name, avatar: p.avatar, child: !!p.child, words: results[k].words, hints: results[k].hints, hinted: results[k].hinted || [] }; }), {
         board: board, session: session, save: true,
         actions: [
           { label: 'Next round', cls: 'btn-blue', icon: I.play, run: function () { playPass(cfg, players, session); } },
@@ -1220,6 +1300,18 @@
       $('[data-ready]', scr.el).onclick = function () {
         var g = playBoard({
           board: board, cfg: cfg, player: p, label: p.name + ' (' + (i + 1) + '/' + players.length + ')',
+          // Child hints follow the players who went before: their longest word and average score.
+          childHints: function () {
+            var maxLen = 0, tot = 0;
+            for (var k = 0; k < i; k++) {
+              var hs = new Set(results[k].hinted || []);
+              results[k].words.forEach(function (w) {
+                if (w.length > maxLen) maxLen = w.length;
+                tot += scoreOf(w, cfg.scoring) * wordMult(players[k], w, hs);
+              });
+            }
+            return { maxLen: maxLen, others: i ? tot / i : 0 };
+          },
           onEnd: function (res) { results[i] = res; turn(i + 1); }
         });
 
@@ -1244,17 +1336,108 @@
     }).sort(function (a, b) { return b.score - a.score; });
     return { rows: rows, counts: counts, finders: finders, unique: unique };
   }
-  function updateSession(session, rows) {
+  // Winner (crown) and Loser (poop) keys for a round. Nobody gets Loser if everyone tied.
+  function roundLabels(rows) {
+    var top = rows.length ? rows[0].score : 0, low = rows.length ? rows[rows.length - 1].score : 0;
+    function k(r) { return r.p.key || r.p.id || r.p.name; }
+    return {
+      win: top > 0 ? rows.filter(function (r) { return r.score === top; }).map(k) : [],
+      lose: rows.length > 1 && low < top ? rows.filter(function (r) { return r.score === low; }).map(k) : []
+    };
+  }
+  // Each round is scored on its own. The session keeps running facts for the trivia card.
+  function updateSession(session, rows, scoring) {
     session.round = (session.round || 0) + 1;
-    var top = rows.length ? rows[0].score : 0;
+    var lab = roundLabels(rows);
     rows.forEach(function (r) {
       var k = r.p.key || r.p.id || r.p.name;
-      var t = session.totals[k] || { total: 0, wins: 0 };
-      t.name = r.p.name; t.avatar = r.p.avatar; t.total += r.score;
-      if (r.score === top && top > 0) t.wins++;
+      var t = session.totals[k] || { total: 0, wins: 0, losses: 0, words: 0, uniques: 0, rounds: 0, best: 0, bestRound: 0, longest: '', odd: '', oddPts: 0 };
+      t.name = r.p.name; t.avatar = r.p.avatar; t.total += r.score; t.rounds++;
+      t.words += r.list.length; t.uniques += r.uniques;
+      if (r.score > t.best) { t.best = r.score; t.bestRound = session.round; }
+      if (r.longest.length > t.longest.length) t.longest = r.longest;
+      // Most unusual: not an everyday word, highest letter value.
+      r.p.words.forEach(function (w) { if (!isEasyWord(w)) { var v = rarityPts(w); if (v > t.oddPts) { t.oddPts = v; t.odd = w; } } });
+      if (lab.win.indexOf(k) >= 0) t.wins++;
+      if (lab.lose.indexOf(k) >= 0) t.losses++;
       session.totals[k] = t;
     });
+    session.labels = lab;
     return standings(session);
+  }
+  // Trivia card lines: [{h: heading, b: text, av: avatar id}]
+  function triviaLines(session) {
+    var T = standings(session), out = [];
+    if (!T.length) return out;
+    function names(list) { return list.map(function (t) { return t.name; }).join(' & '); }
+    function top(f, min) {
+      var best = Math.max.apply(null, T.map(f));
+      if (!(best > (min || 0))) return null;
+      return { v: best, who: T.filter(function (t) { return f(t) === best; }) };
+    }
+    var x;
+    if ((x = top(function (t) { return t.words; }))) out.push({ h: 'Most words found', b: names(x.who) + ' · ' + plural(x.v, 'word', 'words'), av: x.who[0].avatar });
+    if ((x = top(function (t) { return t.longest.length; }))) { var lw = x.who[0].longest; out.push({ h: 'Longest word so far', b: lw.toUpperCase() + ' · ' + lw.length + ' letters · ' + names(x.who.filter(function (t) { return t.longest === lw; })), av: x.who[0].avatar }); }
+    if ((x = top(function (t) { return t.oddPts; }))) out.push({ h: 'Most unusual word', b: x.who[0].odd.toUpperCase() + ' · ' + names(x.who.slice(0, 1)), av: x.who[0].avatar });
+    if ((x = top(function (t) { return t.uniques; }))) out.push({ h: 'Most words nobody else found', b: names(x.who) + ' · ' + x.v, av: x.who[0].avatar });
+    if ((x = top(function (t) { return t.wins; }))) out.push({ h: 'Most wins 👑', b: names(x.who) + ' · ' + plural(x.v, 'win', 'wins'), av: x.who[0].avatar });
+    if ((x = top(function (t) { return t.losses; }))) out.push({ h: 'Most 💩s', b: names(x.who) + ' · ' + x.v, av: x.who[0].avatar });
+    if ((x = top(function (t) { return t.best; }))) out.push({ h: 'Best single round', b: names(x.who.slice(0, 1)) + ' · ' + plural(x.v, 'point', 'points') + ' in round ' + x.who[0].bestRound, av: x.who[0].avatar });
+    if (session.round > 1 && (x = top(function (t) { return Math.round(t.total / t.rounds); }))) out.push({ h: 'Best average', b: names(x.who) + ' · ' + plural(x.v, 'point', 'points') + ' a round', av: x.who[0].avatar });
+    T.forEach(function (t) {
+      out.push({ h: t.name + '’s session', b: plural(t.words, 'word', 'words') + ' · ' + plural(t.wins, 'win', 'wins') + (t.longest ? ' · longest ' + t.longest.toUpperCase() : ''), av: t.avatar });
+    });
+    return out.slice(0, 24);
+  }
+  // A card that cycles through trivia lines. Returns {el, stop}.
+  function triviaCard(lines) {
+    var el = document.createElement('div');
+    el.className = 'card trivia';
+    if (!lines || !lines.length) { el.hidden = true; return { el: el, stop: function () {} }; }
+    var i = 0, t = null;
+    function show() {
+      var x = lines[i % lines.length];
+      el.innerHTML = '<span class="label">Session trivia</span><div class="tv-row">' + avatar(String(x.av || 'fox'), 44) + '<span><small>' + esc(String(x.h)) + '</small><b>' + esc(String(x.b)) + '</b></span></div>' +
+        '<div class="tv-dots">' + lines.slice(0, 12).map(function (_, k) { return '<i' + (k === i % Math.min(12, lines.length) ? ' class="on"' : '') + '></i>'; }).join('') + '</div>';
+      i++;
+    }
+    show();
+    t = setInterval(function () {
+      if (!el.isConnected) { clearInterval(t); return; }
+      el.classList.remove('tv-swap'); void el.offsetWidth; el.classList.add('tv-swap');
+      setTimeout(show, 250);
+    }, 4000);
+    return { el: el, stop: function () { clearInterval(t); } };
+  }
+  // Trivia and labels arrive from the host, so check their shape.
+  function cleanTrivia(a) {
+    return (Array.isArray(a) ? a : []).slice(0, 24).filter(function (x) { return x && typeof x === 'object'; })
+      .map(function (x) { return { h: String(x.h || '').slice(0, 60), b: String(x.b || '').slice(0, 120), av: String(x.av || 'fox').slice(0, 20) }; });
+  }
+  function cleanLabels(l) {
+    function list(v) { return (Array.isArray(v) ? v : []).slice(0, 8).map(String); }
+    return { win: list(l && l.win), lose: list(l && l.lose) };
+  }
+  // The loading screen between Party rounds: players with their crown or poop, trivia cycling,
+  // and a bar that fills until the round starts.
+  var NEXT_WAIT = 5000;
+  function roundLoading(roundNo, players, labels, lines, ms) {
+    labels = labels || { win: [], lose: [] };
+    var scr = mount(
+      '<div class="loading next-load"><div class="eyebrow">Round ' + roundNo + '</div><h2 class="nl-title">Get ready…</h2>' +
+      '<div class="nl-players">' + players.map(function (p) {
+        var k = p.key || p.id || p.name;
+        var badge = labels.win.indexOf(k) >= 0 ? '<span class="nl-badge win">👑<small>Winner</small></span>' : labels.lose.indexOf(k) >= 0 ? '<span class="nl-badge lose">💩<small>Loser</small></span>' : '';
+        return '<div class="nl-p">' + badge + avatar(p.avatar, 52) + '<b>' + esc(p.name) + '</b></div>';
+      }).join('') + '</div>' +
+      '<div class="nl-trivia" data-trivia></div>' +
+      '<div class="nl-bar"><i data-fill style="animation-duration:' + ms + 'ms"></i></div></div>'
+    );
+    var tv = triviaCard(lines);
+    $('[data-trivia]', scr.el).appendChild(tv.el);
+    scr.cleanup = function () { tv.stop(); };
+    WMSound.swish();
+    return new Promise(function (res) { setTimeout(res, ms); });
   }
   function standings(session) {
     return Object.keys(session.totals).map(function (k) { return Object.assign({ key: k }, session.totals[k]); }).sort(function (a, b) { return b.total - a.total; });
@@ -1359,10 +1542,18 @@
     requestAnimationFrame(frame);
   }
 
-  // players: [{key, id?, name, avatar, words, me?}]
-  // opts: {board, session | totals+round, save, saveMine, actions:[{label, cls, icon, run}], note, readyKeys:[...]}
+  // Bar colours for players in the results battle.
+  var BAR_COLS = ['#F26B21', '#2F6FDE', '#4E9A32', '#E0457A', '#E3A21A', '#8E5BB5', '#1A9A8E', '#A8542A'];
+
+  // players: [{key, id?, name, avatar, words, hinted?, me?}]
+  // opts: {board, session | (prev, trivia, round), save, rid, at, actions:[{label, cls, icon, run}], note, onReady,
+  //        role: 'local' | 'host' | 'follow', onStep(i), onSpeed(s), onSkip()}
+  // In Party the host's screen runs the reveal (role 'host') and sends each step to the phones
+  // (role 'follow'), so every screen shows the same word at the same time. Only the host has
+  // Speed up and Skip. A phone that stops hearing from the host carries on by itself.
   function resultsShow(cfg, players, opts) {
     var scoring = cfg.scoring || 'length';
+    var role = opts.role || 'local';
     var R = computeRound(players, scoring);
     // Every player's score goes on this phone's Party leaderboard. The round id stops the same
     // score being counted twice when phones swap scores.
@@ -1370,14 +1561,25 @@
       var rid = opts.rid || newId(), at = opts.at || Date.now();
       R.rows.forEach(function (r) { addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length, { id: rid + ':' + (r.p.key || r.p.name), at: at, easy: cfg.easy }); });
     }
-    var table = opts.session ? updateSession(opts.session, R.rows) : (opts.totals || []);
-    var round = opts.session ? opts.session.round : (opts.round || 1);
-    var P = players.map(function (p, i) { return { p: p, key: p.key || p.id || p.name, idx: i, score: 0, final: 0, total: 0 }; });
+    var prev, trivia, round;
+    if (opts.session) {
+      prev = opts.session.labels || { win: [], lose: [] };
+      updateSession(opts.session, R.rows, scoring);
+      round = opts.session.round;
+      trivia = triviaLines(opts.session);
+    } else {
+      prev = opts.prev || { win: [], lose: [] };
+      trivia = opts.trivia || [];
+      round = opts.round || 1;
+    }
+    var lab = roundLabels(R.rows);
+    var N = players.length;
+    var P = players.map(function (p, i) { return { p: p, key: p.key || p.id || p.name, idx: i, score: 0, final: 0 }; });
     R.rows.forEach(function (r) { P.forEach(function (x) { if (x.p === r.p) x.final = r.score; }); });
-    P.forEach(function (x) { var t = table.filter(function (y) { return y.key === x.key; })[0]; x.total = t ? t.total : x.final; x.wins = t ? t.wins : 0; });
+    function idxOf(key) { for (var i = 0; i < P.length; i++) if (P[i].key === key) return i; return -1; }
     var words = Object.keys(R.counts).map(function (w) { return { w: w, base: scoreOf(w, scoring), unique: R.unique.has(w), who: R.finders[w] }; });
-    var seq = words.filter(function (x) { return !x.unique; }).sort(function (a, b) { return a.base - b.base; })
-      .concat(words.filter(function (x) { return x.unique; }).sort(function (a, b) { return a.base - b.base || a.w.length - b.w.length; }));
+    var seq = words.filter(function (x) { return !x.unique; }).sort(function (a, b) { return a.base - b.base || (a.w < b.w ? -1 : 1); })
+      .concat(words.filter(function (x) { return x.unique; }).sort(function (a, b) { return a.base - b.base || a.w.length - b.w.length || (a.w < b.w ? -1 : 1); }));
     var gems = [], longest = '';
     if (opts.board && opts.board.words) {
       var bw = Array.from(opts.board.words.keys()).filter(function (w) { return !opts.board.easy || isEasyWord(w); });
@@ -1385,83 +1587,160 @@
       longest = bw.sort(function (a, b) { return b.length - a.length || scoreOf(b, scoring) - scoreOf(a, scoring); })[0] || '';
     }
     var winners = R.rows.filter(function (r) { return r.score === R.rows[0].score; });
-    // Last place gets the Loser label (nobody does if everyone tied).
-    var lowest = R.rows.length ? R.rows[R.rows.length - 1].score : 0;
-    var losers = R.rows.length > 1 && lowest < R.rows[0].score ? R.rows.filter(function (r) { return r.score === lowest; }) : [];
-    function showLosers() {
-      losers.forEach(function (r) { P.forEach(function (x) { if (x.p === r.p) { var c = $('[data-loser="' + x.idx + '"]', el); if (c) c.hidden = false; } }); });
-    }
+    var losers = R.rows.filter(function (r) { return lab.lose.indexOf(r.p.key || r.p.id || r.p.name) >= 0; });
+    var controls = role !== 'follow';
     var scr = mount(
       '<header class="band show-band"><div class="band-row"><div class="eyebrow" style="text-align:left">Round ' + round + ' · ' + (scoring === 'rarity' ? 'Rarity scoring' : 'Party') + '</div>' +
-      '<div style="display:flex;gap:8px"><button class="band-btn" data-speed aria-pressed="false">\u23e9 Speed up</button><button class="band-btn" data-skip>Skip</button></div></div>' +
+      (controls ? '<div style="display:flex;gap:8px"><button class="band-btn" data-speed aria-pressed="false">⏩ Speed up</button><button class="band-btn" data-skip>Skip</button></div>' : '') + '</div>' +
       '<div class="show-title" data-title>Counting the words…</div>' +
       '<div class="sub">Shared words score normally. Words only one player found score double.</div></header>' +
       '<div class="scroll"><div class="show">' +
-      '<section class="show-lb"><span class="label" data-lbtitle>This round</span><div class="lb-stage" data-stage style="height:' + (P.length * 66) + 'px">' +
+      '<section class="battle" style="--cols:' + N + '">' +
+      '<div class="pop-zone" data-pop aria-live="polite"></div>' +
+      '<div class="bstage"><div class="blabels" data-labels></div><div class="bcols">' +
       P.map(function (x) {
-        return '<div class="lbs-row" data-row="' + x.idx + '">' + avatar(x.p.avatar, 42) + '<span class="nm"><b>' + esc(x.p.name) + (x.p.me ? ' (you)' : '') + '</b><small data-sub="' + x.idx + '"></small></span>' +
-          '<span class="ready-chip" data-ready="' + x.idx + '" hidden>Ready</span><span class="loser-chip" data-loser="' + x.idx + '" hidden>Loser</span><span class="crown" data-crown="' + x.idx + '" hidden>★</span><span class="sc" data-score="' + x.idx + '">0</span></div>';
+        return '<div class="bcol"><span class="bsc" data-score="' + x.idx + '">0</span><div class="bbar" data-bar="' + x.idx + '" style="background:' + BAR_COLS[x.idx % BAR_COLS.length] + '"></div></div>';
+      }).join('') + '</div></div>' +
+      '<div class="bnames">' + P.map(function (x) {
+        return '<div class="bname">' + avatar(x.p.avatar, N > 5 ? 32 : 40) + '<b>' + esc(x.p.name) + '</b>' + (x.p.me ? '<small>you</small>' : '') + '<span class="ready-chip" data-ready="' + x.idx + '" hidden>✓ Ready</span></div>';
       }).join('') + '</div></section>' +
-      '<section class="show-words"><span class="label">Words \u00b7 tap one to see what it means</span><div class="stream" data-stream></div><div data-gems></div></section>' +
+      '<div data-trivia></div>' +
+      '<section class="show-words"><span class="label">Words · tap one to see what it means</span><div class="stream" data-stream></div><div data-gems></div></section>' +
       '</div><div class="show-actions" data-actions hidden></div></div>' +
       (opts.onReady ? '<div class="ready-bar"><button class="btn ready-btn" data-readyme>' + I.play + 'Ready for next round</button></div>' : '')
     );
-    var rme = $('[data-readyme]', scr.el);
+    var el = scr.el, stream = $('[data-stream]', el), pop = $('[data-pop]', el), done = false, timers = [], tv = null;
+    var rme = $('[data-readyme]', el);
     if (rme) rme.onclick = function () {
       if (rme.classList.contains('done')) return;
-      rme.classList.add('done'); rme.innerHTML = '\u2713 Ready! Waiting for the host\u2026';
+      rme.classList.add('done'); rme.innerHTML = '✓ Ready! Waiting for the host…';
       buzz(30); Snd.good(3); opts.onReady();
     };
-    var el = scr.el, stream = $('[data-stream]', el), done = false, timers = [];
     function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
-    scr.cleanup = function () { timers.forEach(clearTimeout); };
-    function place(byTotal) {
-      var order = P.slice().sort(function (a, b) { return (byTotal ? b.total - a.total : b.score - a.score) || a.idx - b.idx; });
-      order.forEach(function (x, i) {
-        var row = $('[data-row="' + x.idx + '"]', el);
-        row.style.transform = 'translateY(' + (i * 66) + 'px)';
-        row.classList.toggle('lead', i === 0 && (byTotal ? x.total : x.score) > 0);
+    scr.cleanup = function () { timers.forEach(clearTimeout); clearTimeout(watch); if (tv) tv.stop(); $$('.fly-chip').forEach(function (c) { c.remove(); }); };
+
+    // Bars rise against the highest score so far, like a live battle.
+    function drawBars() {
+      var mx = Math.max(8, Math.max.apply(null, P.map(function (x) { return x.score; })));
+      P.forEach(function (x) {
+        $('[data-bar="' + x.idx + '"]', el).style.height = Math.max(6, Math.round(x.score / mx * 100)) + '%';
       });
     }
-    place(false);
-    function wordEl(x, instant) {
+    drawBars();
+
+    // Crown and poop labels. They start on last round's holders and move to the new ones.
+    var labelsEl = $('[data-labels]', el), badges = [];
+    function colLeft(i) { return ((i + 0.5) / N * 100) + '%'; }
+    function makeBadge(kind, i, dropIn) {
       var d = document.createElement('div');
-      d.className = 'sw' + (instant ? ' settled ' + (x.unique ? 'gold' : 'dup') : ' in');
+      d.className = 'lbadge ' + kind + (dropIn ? ' drop' : '');
+      d.innerHTML = '<span class="bi">' + (kind === 'win' ? '👑' : '💩') + '</span><small>' + (kind === 'win' ? 'Winner' : 'Loser') + '</small>';
+      d.style.left = colLeft(i);
+      labelsEl.appendChild(d);
+      var b = { kind: kind, i: i, el: d };
+      badges.push(b);
+      return b;
+    }
+    ['win', 'lose'].forEach(function (kind) {
+      (prev[kind] || []).forEach(function (k) { var i = idxOf(k); if (i >= 0) makeBadge(kind, i, false); });
+    });
+    function moveLabels(animated) {
+      ['win', 'lose'].forEach(function (kind) {
+        var want = (lab[kind] || []).map(idxOf).filter(function (i) { return i >= 0; });
+        var have = badges.filter(function (b) { return b.kind === kind; });
+        var keep = have.filter(function (b) { return want.indexOf(b.i) >= 0; });
+        var spare = have.filter(function (b) { return want.indexOf(b.i) < 0; });
+        keep.forEach(function (b) { if (animated) { b.el.classList.remove('bounce'); void b.el.offsetWidth; b.el.classList.add('bounce'); } });
+        want.forEach(function (i) {
+          if (keep.some(function (b) { return b.i === i; })) return;
+          var b = spare.shift();
+          if (b) { b.i = i; b.el.classList.toggle('moving', animated); b.el.style.left = colLeft(i); }
+          else makeBadge(kind, i, animated);
+        });
+        spare.forEach(function (b) {
+          badges.splice(badges.indexOf(b), 1);
+          if (animated) { b.el.classList.add('gone'); setTimeout(function () { b.el.remove(); }, 600); } else b.el.remove();
+        });
+      });
+      if (animated && badges.length) WMSound.sparkle();
+    }
+
+    function wordEl(x) {
+      var d = document.createElement('div');
+      d.className = 'sw settled ' + (x.unique ? 'gold' : 'dup');
       d.setAttribute('data-def', x.w); d.setAttribute('role', 'button'); d.tabIndex = 0;
       d.innerHTML = '<span class="ww"><b>' + esc(x.w.toUpperCase()) + '</b><span class="who">' + x.who.map(function (p) { return avatar(p.avatar, 22); }).join('') + '<small>' + esc(x.who.map(function (p) { return p.name; }).join(', ')) + '</small></span></span>' +
-        '<span class="tag">' + (x.unique ? 'Unique ×2' : 'Shared') + '</span><span class="pts">' + (x.unique ? x.base + ' × 2 = ' + (x.base * 2) : '+' + x.base) + '</span>' +
-        (x.unique && !instant ? '<span class="sparks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' : '');
+        '<span class="tag">' + (x.unique ? 'Unique ×2' : 'Shared') + '</span><span class="pts">' + (x.unique ? x.base + ' × 2 = ' + (x.base * 2) : '+' + x.base) + '</span>';
       return d;
     }
-    function award(x) {
+    // The word pops up above the bars...
+    function popWord(x) {
+      pop.innerHTML = '<div class="pop-word ' + (x.unique ? 'gold' : 'dup') + '"><b>' + esc(x.w.toUpperCase()) + '</b><span class="pop-meta">' +
+        x.who.map(function (p) { return avatar(p.avatar, 24); }).join('') + '<span class="tag">' + (x.unique ? 'Unique ×2' : 'Shared') + '</span></span>' +
+        (x.unique ? '<span class="sparks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' : '') + '</div>';
+      if (x.unique) WMSound.sparkle(); else Snd.tone(660, 0.06, 'triangle', 0.03);
+    }
+    // ...then flies down into the bars of the players who found it.
+    function flyWord(x) {
+      var src = $('.pop-word', pop);
+      var from = src ? src.getBoundingClientRect() : pop.getBoundingClientRect();
+      var dur = Math.round(520 / speed);
       x.who.forEach(function (p) {
         var t = P.filter(function (y) { return y.p === p; })[0];
-        var old = t.score; t.score += (x.unique ? x.base * 2 : x.base) * childMult(p);
-        animateNum($('[data-score="' + t.idx + '"]', el), old, t.score, 700 / speed);
+        var add = (x.unique ? x.base * 2 : x.base) * wordMult(p, x.w);
+        var target = $('[data-score="' + t.idx + '"]', el).getBoundingClientRect();
+        var chip = document.createElement('div');
+        chip.className = 'fly-chip' + (x.unique ? ' gold' : '');
+        chip.textContent = '+' + add;
+        chip.style.left = (from.left + from.width / 2) + 'px'; chip.style.top = (from.top + from.height / 2) + 'px';
+        document.body.appendChild(chip);
+        var dx = target.left + target.width / 2 - (from.left + from.width / 2), dy = target.top + target.height / 2 - (from.top + from.height / 2);
+        if (chip.animate) chip.animate([{ transform: 'translate(-50%,-50%) scale(1.1)', opacity: 1 }, { transform: 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(.7)', opacity: 0.9 }], { duration: dur, easing: 'cubic-bezier(.4,0,.6,1)', fill: 'forwards' });
+        var g0 = flyGen;
+        setTimeout(function () {
+          chip.remove();
+          if (g0 !== flyGen) return;
+          var old = t.score; t.score += add;
+          animateNum($('[data-score="' + t.idx + '"]', el), old, t.score, 500 / speed);
+          drawBars();
+          var bar = $('[data-bar="' + t.idx + '"]', el);
+          bar.classList.remove('hit'); void bar.offsetWidth; bar.classList.add('hit');
+        }, dur);
       });
-      place(false);
+      if (src) src.classList.add('leave');
+      if (x.unique) WMSound.sparkle(); else WMSound.swish();
+      stream.insertBefore(wordEl(x), stream.firstChild);
     }
-    // The reveal runs as a list of steps. Each waits its own time divided by the current speed,
-    // so the Speed up button takes effect straight away.
-    var speed = 1, steps = [], stepAt = 0;
+
+    // The reveal is a list of steps. Each waits its own time divided by the current speed.
+    // The host (or a single device) runs them on timers; followers run them when told.
+    var speed = 1, steps = [], stepAt = 0, watch = null, flyGen = 0;
     function step(after, fn) { steps.push({ after: after, fn: fn }); }
-    function runSteps() {
-      if (stepAt >= steps.length) return;
-      var st = steps[stepAt++];
-      later(function () { st.fn(); runSteps(); }, st.after / speed);
+    function runOne() {
+      if (stepAt >= steps.length) return false;
+      var i = stepAt++;
+      steps[i].fn();
+      if (opts.onStep) opts.onStep(i);
+      return true;
     }
-    var gap = Math.max(1100, Math.min(1800, 40000 / Math.max(1, seq.length)));
+    function runSteps() {
+      if (stepAt >= steps.length || done) return;
+      later(function () { if (runOne()) runSteps(); }, steps[stepAt].after / speed);
+    }
+    // A follower that hears nothing from the host for a while carries on by itself.
+    function guard() {
+      clearTimeout(watch);
+      if (role !== 'follow' || done) return;
+      watch = setTimeout(function () { if (!done) { role = 'local'; runSteps(); } }, 6000);
+    }
+    var gap = Math.max(950, Math.min(1550, 34000 / Math.max(1, seq.length)));
     step(1200, function () {});
     seq.forEach(function (x) {
-      var d;
-      step(gap * 0.45, function () { d = wordEl(x, false); stream.insertBefore(d, stream.firstChild); });
-      step(gap * 0.55, function () {
-        d.classList.remove('in'); d.classList.add(x.unique ? 'gold' : 'dup');
-        if (x.unique) WMSound.sparkle(); else WMSound.swish();
-        award(x);
-      });
+      step(gap * 0.4, function () { popWord(x); });
+      step(gap * 0.6, function () { flyWord(x); });
     });
     function showGems(animated) {
+      pop.innerHTML = '';
       if (!gems.length && !longest) return;
       var g = $('[data-gems]', el);
       g.innerHTML = '<div class="card gems' + (animated ? ' pop-in' : '') + '"><div class="missed">Missed opportunity!</div>' +
@@ -1475,65 +1754,82 @@
       t.textContent = winners.length > 1 ? 'It’s a tie!' : winners[0].p.name + ' wins round ' + round + '!';
       t.classList.add('pop-in');
     }
-    function celebrate(next) {
+    var stage = null;
+    function celebrate() {
       var w = winners[0];
       var o = document.createElement('div');
       o.className = 'overlay center winner-stage';
       o.innerHTML = '<div class="winner-card"><div class="winner-av">' + avatar(w.p.avatar, 150) + '</div><div class="winner-name">' + (winners.length > 1 ? 'It’s a tie!' : esc(w.p.name) + ' wins!') + '</div><div class="winner-pts">' + plural(w.score, 'point', 'points') + ' this round</div>' +
-        (losers.length ? '<div class="loser-line">' + losers.map(function (r) { return avatar(r.p.avatar, 36); }).join('') + '<span>' + esc(losers.map(function (r) { return r.p.name; }).join(' & ')) + (losers.length > 1 ? ' are the losers' : ' is the loser') + '</span></div>' : '') +
+        (losers.length ? '<div class="loser-line">' + losers.map(function (r) { return avatar(r.p.avatar, 36); }).join('') + '<span>💩 ' + esc(losers.map(function (r) { return r.p.name; }).join(' & ')) + (losers.length > 1 ? ' are the losers' : ' is the loser') + '</span></div>' : '') +
         '<p class="hint-text" style="color:#FFF3D9">Tap to continue</p></div>';
       el.appendChild(o);
+      stage = o;
       confetti(o); Snd.cheer();
-      var gone = false;
-      function close() { if (gone) return; gone = true; o.classList.add('leaving-ov'); setTimeout(function () { o.remove(); next(); }, 350); }
-      o.onclick = close; later(close, 5500 / speed);
+      o.onclick = closeStage;
     }
-    function standingsView(animated) {
-      $('[data-lbtitle]', el).textContent = table.length ? 'Overall after ' + plural(round, 'round', 'rounds') : 'This round';
-      P.forEach(function (x) {
-        var sc = $('[data-score="' + x.idx + '"]', el);
-        if (animated) animateNum(sc, x.final, x.total, 1500 / speed); else sc.textContent = x.total;
-        $('[data-sub="' + x.idx + '"]', el).textContent = '+' + x.final + ' this round · ' + plural(x.wins, 'win', 'wins');
-      });
-      place(true);
-      var lead = P.slice().sort(function (a, b) { return b.total - a.total || a.idx - b.idx; })[0];
-      if (lead && lead.total > 0) $('[data-crown="' + lead.idx + '"]', el).hidden = false;
+    function closeStage() {
+      var o = stage; stage = null;
+      if (!o) return;
+      o.classList.add('leaving-ov'); setTimeout(function () { o.remove(); }, 350);
     }
     function finish() {
       if (done) return;
       done = true;
+      clearTimeout(watch);
+      pop.innerHTML = '';
       var sk = $('[data-skip]', el); if (sk) sk.remove();
       var sp = $('[data-speed]', el); if (sp) sp.remove();
+      tv = triviaCard(trivia);
+      var th = $('[data-trivia]', el); th.appendChild(tv.el); tv.el.classList.add('pop-in');
       var a = $('[data-actions]', el);
       a.innerHTML = (opts.note ? '<p class="hint-text" style="text-align:center">' + esc(opts.note) + '</p>' : '') +
         (opts.actions || []).map(function (x, i) { return '<button class="btn ' + (x.cls || 'btn-white') + '" data-act="' + i + '">' + (x.icon || '') + esc(x.label) + '</button>'; }).join('');
       a.hidden = false; a.classList.add('pop-in');
       on(a, '[data-act]', 'click', function (e) { var x = opts.actions[+e.currentTarget.getAttribute('data-act')]; x.run(); });
     }
-    step(1500, function () { showGems(true); });
-    step(3500, function () { title(); showLosers(); celebrate(function () { later(function () { standingsView(true); later(finish, 1800 / speed); }, 600 / speed); }); });
-    runSteps();
-    $('[data-speed]', el).onclick = function (e) {
-      speed = speed === 1 ? 3 : 1;
-      var b = e.currentTarget;
-      b.setAttribute('aria-pressed', String(speed > 1));
-      b.textContent = speed > 1 ? '\u25b6 Normal speed' : '\u23e9 Speed up';
-    };
-    $('[data-skip]', el).onclick = function () {
-      timers.forEach(clearTimeout); timers = [];
+    step(1400, function () { showGems(true); });
+    step(1800, function () { title(); celebrate(); });
+    step(4200, function () { closeStage(); moveLabels(true); });
+    step(1600, finish);
+
+    function setSpeed(s) {
+      speed = s;
+      var b = $('[data-speed]', el);
+      if (b) { b.setAttribute('aria-pressed', String(speed > 1)); b.textContent = speed > 1 ? '▶ Normal speed' : '⏩ Speed up'; }
+    }
+    function skip() {
+      if (done) return;
+      timers.forEach(clearTimeout); timers = []; flyGen++;
+      $$('.fly-chip').forEach(function (c) { c.remove(); });
       $$('.winner-stage', el).forEach(function (n) { n.remove(); });
+      stage = null;
       stream.innerHTML = '';
-      seq.slice().reverse().forEach(function (x) { stream.appendChild(wordEl(x, true)); });
-      P.forEach(function (x) { x.score = x.final; });
-      showGems(false); title(); showLosers(); standingsView(false); finish();
-    };
+      seq.slice().reverse().forEach(function (x) { stream.appendChild(wordEl(x)); });
+      P.forEach(function (x) { x.score = x.final; $('[data-score="' + x.idx + '"]', el).textContent = x.final; });
+      drawBars();
+      stepAt = steps.length;
+      showGems(false); title(); moveLabels(false); finish();
+    }
+    if (controls) {
+      $('[data-speed]', el).onclick = function () { setSpeed(speed === 1 ? 3 : 1); if (opts.onSpeed) opts.onSpeed(speed); };
+      $('[data-skip]', el).onclick = function () { skip(); if (opts.onSkip) opts.onSkip(); };
+    }
+    if (role === 'follow') guard(); else runSteps();
     return {
       el: el,
       setReady: function (key) {
         P.forEach(function (x) { if (x.key === key) { var c = $('[data-ready="' + x.idx + '"]', el); if (c) c.hidden = false; } });
         if (opts.onReadyChange) opts.onReadyChange();
       },
-      round: round, table: table
+      // Followers: catch up to the host's step i.
+      goTo: function (i) {
+        if (done || role !== 'follow') return;
+        while (stepAt <= i && stepAt < steps.length) runOne();
+        guard();
+      },
+      setSpeed: setSpeed,
+      skip: skip,
+      round: round, trivia: trivia, prev: prev, labels: lab
     };
   }
 
@@ -1801,10 +2097,12 @@
           if (m.last) sendShared(g.dc);
         } else if (m.t === 'count') {
           if (spectator) spectator.setCount(g.id, +m.n || 0);
+          if (round) liveUpdate(g.id, +m.score || 0, +m.long || 0);
         } else if (m.t === 'ready') {
           if (resultsApi) resultsApi.setReady('d:' + (g.did || g.id));
         } else if (m.t === 'done' && round) {
           round.done[g.id] = Array.isArray(m.words) ? m.words.slice(0, 2000).map(String) : [];
+          round.hinted[g.id] = Array.isArray(m.hinted) ? m.hinted.slice(0, 2000).map(String) : [];
           round.check();
         }
       };
@@ -1879,14 +2177,38 @@
         }, 45000);
       }).catch(function (e) { busy = false; toast(e.message || 'That code did not work'); render(); });
     }
+    // Live scores and longest words during a round, for child hints. Every phone sends its own;
+    // the host passes the longest word so far and everyone's scores back out.
+    function liveUpdate(id, score, long) {
+      if (!round) return;
+      round.live[id] = { score: score, long: long };
+      var max = 0, scores = {};
+      Object.keys(round.live).forEach(function (k) { max = Math.max(max, round.live[k].long); scores[k] = round.live[k].score; });
+      round.maxLen = max;
+      broadcast({ t: 'live', max: max, scores: scores });
+    }
+    function hostHintInfo() {
+      var r = round || { live: {}, maxLen: 0 }, tot = 0, cnt = 0;
+      players().forEach(function (p) { if (p.id !== 'h') { tot += (r.live[p.id] || { score: 0 }).score; cnt++; } });
+      return { maxLen: r.maxLen || 0, others: cnt ? tot / cnt : 0 };
+    }
+    // Between rounds every phone shows a short loading screen with the trivia, then the round starts.
+    function nextRound() {
+      if (!guests.length) { toast('Everyone has left. Go back to the lobby to add players.'); return; }
+      var lines = resultsApi ? resultsApi.trivia : [], labels = session.labels || { win: [], lose: [] };
+      resultsApi = null; inGame = true;
+      var everyone = players();
+      broadcast({ t: 'next', round: session.round + 1, trivia: lines, labels: labels, players: everyone });
+      roundLoading(session.round + 1, everyone, labels, lines, NEXT_WAIT).then(function () { if (!closed) startRound(); });
+    }
     function startRound() {
-      if (!guests.length) return;
+      if (!guests.length) { inGame = false; scr = null; broadcast(lobbyMsg()); newOffer(); return; }
       gen++;
       if (pending && !busy) { try { pending.pc.close(); } catch (e) {} pending = null; }
       inGame = true; resultsApi = null;
       var board = makeBoard(cfg.n, cfg.minLen, cfg.seed, cfg.easy);
       var everyone = players();
-      round = { done: {}, finished: false, myWords: cfg.screenOnly ? [] : null, timer: null, board: board };
+      round = { done: {}, hinted: {}, live: {}, maxLen: 0, finished: false, myWords: cfg.screenOnly ? [] : null, myHinted: [], timer: null, board: board };
       round.check = function () {
         if (round.finished || !round.myWords) return;
         var waiting = guests.filter(function (g) { return !round.done[g.id]; });
@@ -1894,21 +2216,25 @@
         round.finished = true; clearTimeout(round.timer);
         spectator = null;
         var res = everyone.filter(function (p) { return p.id === 'h' || round.done[p.id] || guests.some(function (g) { return g.id === p.id; }); }).map(function (p) {
-          return { id: p.id, key: p.key, name: p.name, avatar: p.avatar, child: !!p.child, words: p.id === 'h' ? round.myWords : (round.done[p.id] || []) };
+          return { id: p.id, key: p.key, name: p.name, avatar: p.avatar, child: !!p.child, words: p.id === 'h' ? round.myWords : (round.done[p.id] || []), hinted: p.id === 'h' ? round.myHinted : (round.hinted[p.id] || []) };
         });
         var mine = res.map(function (r) { return Object.assign({}, r, { me: r.id === 'h' }); });
         var rid = newId(), at = Date.now();
         inGame = false;
+        var showRid = rid;
         resultsApi = resultsShow(cfg, mine, {
-          board: round.board, session: session, save: true, rid: rid, at: at,
-          note: 'Players tap Ready on their phones. You can start whenever you like.',
+          board: round.board, session: session, save: true, rid: rid, at: at, role: 'host',
+          onStep: function (i) { broadcast({ t: 'rstep', i: i, rid: showRid }); },
+          onSpeed: function (sp) { broadcast({ t: 'rspeed', s: sp, rid: showRid }); },
+          onSkip: function () { broadcast({ t: 'rskip', rid: showRid }); },
+          note: 'You can see who’s ready by their bar. Only you can start the next round.',
           actions: [
-            { label: 'Start next round', cls: 'btn-blue', icon: I.play, run: function () { if (!guests.length) { toast('Everyone has left. Go back to the lobby to add players.'); return; } startRound(); } },
+            { label: 'Start next round', cls: 'btn-blue', icon: I.play, run: nextRound },
             { label: 'Back to lobby to add players', run: function () { resultsApi = null; round = null; broadcast(lobbyMsg()); scr = null; newOffer(); } },
             { label: 'Close game', run: function () { teardown(); home(); } }
           ]
         });
-        broadcast({ t: 'results', players: res, mode: cfg.mode, n: cfg.n, minLen: cfg.minLen, scoring: cfg.scoring, easy: !!cfg.easy, round: resultsApi.round, totals: resultsApi.table, rid: rid, at: at });
+        broadcast({ t: 'results', players: res, mode: cfg.mode, n: cfg.n, minLen: cfg.minLen, scoring: cfg.scoring, easy: !!cfg.easy, round: resultsApi.round, trivia: resultsApi.trivia, prev: resultsApi.prev, rid: rid, at: at });
         // Then swap leaderboards so every phone has everyone's scores.
         setTimeout(function () { guests.forEach(function (g) { sendShared(g.dc); }); }, 1500);
       };
@@ -1924,7 +2250,9 @@
       }
       playBoard({
         board: board, cfg: cfg, player: me, multiplayer: true,
-        onEnd: function (r) { round.myWords = r.words; collecting(); },
+        childHints: hostHintInfo,
+        onWord: function (n, st) { liveUpdate('h', st.score, st.long); },
+        onEnd: function (r) { round.myWords = r.words; round.myHinted = r.hinted || []; collecting(); },
         onQuit: function () { teardown(); home(); }
       });
     }
@@ -1935,6 +2263,9 @@
   // Guest
   function joinGame() {
     var link = null, dc = null, hostPlayers = [], game = null, closed = false, lastCfg = null, myId = null, lastBoard = null;
+    // The host's results show: steps, speed and skip that arrive before this phone's show is up are kept.
+    var show = null, showRid = null, ctl = { step: -1, speed: 1, skip: false };
+    var live = { max: 0, scores: {} };
     var scr = mount(backBand('Join a game') + '<div class="scroll" data-body></div>');
     function leave() { closed = true; try { if (link) link.pc.close(); } catch (e) {} }
     on(scr.el, '[data-back]', 'click', function () { leave(); nearby(); });
@@ -1987,11 +2318,19 @@
         var cfg = { mode: m.mode, n: m.n, minLen: m.minLen, time: m.time, scoring: m.scoring || 'length', easy: !!m.easy };
         var board = boardFromCells(m.cells, m.n, m.minLen, !!m.easy);
         lastBoard = board;
+        show = null; live = { max: 0, scores: {} };
         game = playBoard({
           board: board, cfg: cfg, player: S.profile, multiplayer: true, ambient: false,
-          onWord: function (n) { send(dc, { t: 'count', n: n }); },
+          onWord: function (n, st) { send(dc, { t: 'count', n: n, score: st.score, long: st.long }); },
+          childHints: function () {
+            var tot = 0, cnt = 0;
+            Object.keys(live.scores).forEach(function (k) { if (k !== myId) { tot += +live.scores[k] || 0; cnt++; } });
+            // Players who haven't found a word yet count as 0.
+            var others = hostPlayers.filter(function (p) { return p.id !== myId; }).length;
+            return { maxLen: live.max, others: Math.max(cnt, others) ? tot / Math.max(cnt, others) : 0 };
+          },
           onEnd: function (r) {
-            send(dc, { t: 'done', words: r.words });
+            send(dc, { t: 'done', words: r.words, hinted: r.hinted || [] });
             mount('<div class="loading"><span class="spinner" style="width:40px;height:40px;border-width:5px"></span><p>Waiting for everyone’s words…</p></div>');
           },
           onQuit: function () { leave(); home(); }
@@ -1999,14 +2338,31 @@
 
       } else if (m.t === 'results') {
         if (game && !game.isEnded()) game.forceEnd();
-        var players = (m.players || []).map(function (p) { return { id: p.id, key: p.key, name: String(p.name).slice(0, 14), avatar: p.avatar, child: !!p.child, words: (p.words || []).map(String), me: p.id === myId }; });
+        var players = (m.players || []).map(function (p) { return { id: p.id, key: p.key, name: String(p.name).slice(0, 14), avatar: p.avatar, child: !!p.child, words: (p.words || []).map(String), hinted: (p.hinted || []).map(String), me: p.id === myId }; });
         var cfg2 = { mode: m.mode, n: m.n, minLen: m.minLen, scoring: m.scoring || 'length', easy: !!m.easy, time: MODES[m.mode] ? MODES[m.mode].time : 0 };
+        var rid = typeof m.rid === 'string' ? m.rid.slice(0, 60) : null;
+        showRid = rid; ctl = { step: -1, speed: 1, skip: false }; show = null;
         setTimeout(function () {
-          resultsShow(cfg2, players, { board: lastBoard, totals: m.totals || [], round: m.round || 1, save: true, rid: typeof m.rid === 'string' ? m.rid.slice(0, 60) : null, at: +m.at || Date.now(),
+          if (closed || showRid !== rid) return;
+          show = resultsShow(cfg2, players, { board: lastBoard, round: m.round || 1, trivia: cleanTrivia(m.trivia), prev: cleanLabels(m.prev), save: true, rid: rid, at: +m.at || Date.now(),
+            role: 'follow',
             note: 'The host starts the next round.',
             onReady: function () { send(dc, { t: 'ready' }); },
             actions: [{ label: 'Leave game', run: function () { confirmBox('Leave this game?', 'Leave', 'Stay').then(function (y) { if (y) { leave(); home(); } }); } }] });
+          if (ctl.speed !== 1) show.setSpeed(ctl.speed);
+          if (ctl.skip) show.skip(); else if (ctl.step >= 0) show.goTo(ctl.step);
         }, game && !game.isEnded() ? 1200 : 0);
+      } else if (m.t === 'rstep' || m.t === 'rspeed' || m.t === 'rskip') {
+        if (m.rid !== showRid) return;
+        if (m.t === 'rstep') { ctl.step = Math.max(ctl.step, +m.i || 0); if (show) show.goTo(ctl.step); }
+        else if (m.t === 'rspeed') { ctl.speed = +m.s === 3 ? 3 : 1; if (show) show.setSpeed(ctl.speed); }
+        else { ctl.skip = true; if (show) show.skip(); }
+      } else if (m.t === 'live') {
+        live = { max: +m.max || 0, scores: m.scores && typeof m.scores === 'object' ? m.scores : {} };
+      } else if (m.t === 'next') {
+        show = null; showRid = null;
+        if (Array.isArray(m.players)) hostPlayers = m.players;
+        roundLoading(+m.round || 2, hostPlayers, cleanLabels(m.labels), cleanTrivia(m.trivia), NEXT_WAIT);
       } else if (m.t === 'bye') {
         closed = true; toast('The host closed the game'); home();
       }

@@ -52,13 +52,17 @@ Plain HTML, CSS and JavaScript, with no build step and no framework. All code is
       - `WMSound.roundStart` calls `drop(i)`: each tile gets `.rolling` and its cell `.drop-in`, and a 90ms interval rolls random letters.
       - Then it calls `beat(i)`, then `go()`: the tiles settle onto the real letters with a stagger of `(row + col) × 25ms` (`.settle`), the blockers are removed, and the promise resolves.
       - `full: false` plays only the beeps. This is used for player phones in Party, where the visuals still play.
-    - `playBoard(opts)` is the play screen. Tiles start as `.tile.pre` and empty. It includes layout, swipe handling (pointer events, `adj()`, backtrack by sliding back, `badMove` sound), the trail SVG, submit, the timer (Survival `addTime`), the last-10-seconds urgency, music, hints (`hintMenu`, pool by child or easy), the ☰ pause menu (`soundSwitches()` / `bindSoundSwitches()`) and `finish()`. `opts.ambient` is false on Party player phones (no music or ticking). It returns `{forceEnd, el, start, isEnded}`.
-13. **Scoring:** `scoreWords(words, uniqueSet, scoring, mult)` and `childMult(p)` (2 for child players).
+    - `playBoard(opts)` is the play screen. `opts.onWord(count, {score, long})`, `opts.childHints()` → `{maxLen, others}`, and `onEnd` gets `{words, hints, hinted, lasted}`. Tiles start as `.tile.pre` and empty. It includes layout, swipe handling (pointer events, `adj()`, backtrack by sliding back, `badMove` sound), the trail SVG, submit, the timer (Survival `addTime`), the last-10-seconds urgency, music, hints (`hintMenu`, pool by child or easy), the ☰ pause menu (`soundSwitches()` / `bindSoundSwitches()`) and `finish()`. `opts.ambient` is false on Party player phones (no music or ticking). It returns `{forceEnd, el, start, isEnded}`.
+13. **Scoring:** `scoreWords(words, uniqueSet, scoring, mult)` (mult is a number or a function of the word), `wordMult(p, w, hintedSet)` (2 for a child's own words, 1 for hinted words and adults), `childMult(p)` and `KID_COOLDOWN` (5000ms).
 14. **Solo:** `playSolo(cfg)`, `tallyUp`, `wordRows`, `fmtTime`, `resultsSolo(...)` (animated reveal, missed words, personal best and ranks).
 15. **Pass and play:** `playPass(...)`.
-16. **Party results:** `computeRound(players, scoring)` (counts, unique set, finders, rows), `updateSession`, `standings`.
+16. **Party results:** `computeRound(players, scoring)` (counts, unique set, finders, rows), `roundLabels(rows)` (winner and loser keys), `updateSession(session, rows, scoring)` (per-player session facts and `session.labels`), `standings`, `triviaLines(session)` (`[{h, b, av}]`), `triviaCard(lines)` (cycles every 4s), `cleanTrivia` / `cleanLabels` (check host data) and `roundLoading(round, players, labels, lines, ms)` (the between-rounds screen, `NEXT_WAIT` = 5000ms).
 17. **Big screen:** `spectate(board, cfg, players, roundNo, onEnd, onQuit)` shows live counts, uses the same countdown, and plays music.
-18. **Animated results:** `animateNum`, `confetti`, `resultsShow(...)` (shared then unique words, score roll-up, winner, Loser label, Ready button, session standings).
+18. **Animated results:** `animateNum`, `confetti`, `BAR_COLS`, `resultsShow(cfg, players, opts)`, the bar battle:
+    - `opts.role` is `'local'` (pass-and-play), `'host'` or `'follow'` (Party player phones). The reveal is a list of `steps`. Local and host run them on timers, and the host calls `opts.onStep(i)`, `onSpeed(s)` and `onSkip()` to broadcast. Followers run steps only through `api.goTo(i)`, with `api.setSpeed` and `api.skip`. A follower that hears nothing for 6 seconds switches to local (`guard`).
+    - Each word has two steps: `popWord` (above the bars) and `flyWord` (`.fly-chip` elements on `document.body`, Web Animations, then the bar rises via `drawBars`). `flyGen` stops chips scoring after a skip.
+    - Labels: `.lbadge` elements in `[data-labels]`, positioned by column. They start on `prev` holders and `moveLabels` moves, bounces, drops or removes them.
+    - Returns `{el, setReady, goTo, setSpeed, skip, round, trivia, prev, labels}`.
 19. **Leaderboards (screen):** `leaderboards(back, mode, n)` with This phone | Everyone and Normal | Easy switches.
 20. **Hint and sound controls:** `soundSwitches`, `bindSoundSwitches`, `soundSettings`, `bindSoundSettings` (sliders `data-vol`, choices `data-sndg` / `data-sndv` → `WMSound.preview`), `hintControls`, `bindHintControls`.
 21. **Settings:** `settings()`.
@@ -75,9 +79,12 @@ The host is in charge. Player phones only send their own actions.
 | `welcome` `{id}` | host → player | The player's id. |
 | `lobby` `{players, mode, n, minLen}` | host → all | Lobby list. |
 | `start` `{cells, n, minLen, mode, time, scoring, easy, players}` | host → all | Round start with the board and settings. |
-| `count` `{n}` | player → host | Live number of words found, for the big screen. |
-| `done` `{words}` | player → host | The player's words at the end of the round. |
-| `results` | host → all | The full round results (computed by the host with `computeRound`, including child doubling) and session standings. |
+| `count` `{n, score, long}` | player → host | Live number of words found (big screen), plus score and longest word length for child hints. |
+| `live` `{max, scores}` | host → all | Longest word length so far and every player's live score (by id), for child hints. |
+| `done` `{words, hinted}` | player → host | The player's words at the end of the round, and which of them came from hints. |
+| `results` `{players, …, round, trivia, prev, rid}` | host → all | The round's words per player (with `hinted`), the trivia lines and last round's label holders. Each phone works out the scores with `computeRound`. |
+| `rstep` `{i, rid}` / `rspeed` `{s, rid}` / `rskip` `{rid}` | host → all | The host's results reveal: step reached, speed, skip. Kept in `ctl` if they arrive before the phone's show is up. |
+| `next` `{round, trivia, labels, players}` | host → all | Show the between-rounds loading screen. `start` follows after `NEXT_WAIT`. |
 | `ready` | player → host | The player pressed Ready on the summary. |
 | `sync` `{entries, last}` | both ways | Shared leaderboard scores, sent in chunks. |
 | `bye` | host → all | The host closed the game. |
@@ -118,3 +125,5 @@ shared {id: entry}, sharedInit, daily {...}, last {mode, size, minLen, partyTime
 - **iPhone silent switch** mutes Web Audio.
 - **Board generation time:** about 60–100ms per board on a computer, possibly up to about 0.5s on an older phone.
 - Old `.deal` / `.deal-wrap` styles from the v24 overlay countdown are unused since v25 (see `TODO.md`).
+- `.badge` is an older class (personal-best badge). The results labels use `.lbadge`.
+- The child Hint button (`.hint-btn.kid`) only appears when `playBoard` gets `opts.childHints` (pass-and-play and Party) and the player is a child. Solo hints are unchanged.

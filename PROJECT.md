@@ -40,7 +40,7 @@ A Boggle-style word game for the family, played on phones. Swipe across touching
 - **By length** (default): 3 letters = 1, 4 = 2, 5 = 3, then +1 per extra letter (6 = 4, 7 = 5…).
 - **By rarity:** each letter has a value (E, A, S… 1 point, up to Q and Z 10), and a word scores the total of its letters.
 - **Party and pass-and-play:** a word only one player found scores double ("Only you ×2"). Shared words score normally. Words aren't crossed out.
-- **Child profile:** a child player's words score double in Party and pass-and-play, on Normal and Easy boards. Not in solo. Results look completely normal, with nothing labelled "child".
+- **Child profile:** a child player's words score double in Party and pass-and-play, on Normal and Easy boards. Words they found from a hint score like anyone else's (v26). Not in solo. Results look completely normal, with nothing labelled "child".
 
 ## Modes
 
@@ -66,14 +66,18 @@ Together:
 ## Child profile
 
 - A toggle in Settings for the player on this phone, plus a per-player "Child" tick in pass-and-play.
-- Child players get hints with 3- and 4-letter words, and their words score double in Party and pass-and-play.
+- **Solo:** a child gets the normal hints (3 and 4-letter words, after the idle delay).
+- **Party and pass-and-play (v26):** the child's Hint button is always on screen from the start. After a hint it refills over 5 seconds (a filling bar on the button). If the child finds a word on their own, it's ready again straight away.
+  - Hint size follows the longest word anyone has found so far: 3 letters at first, then up to 4 once someone finds a 4-letter word, and so on. In pass-and-play this means the players who went before the child.
+  - Boost: the child's score is compared with the other players' average. Level means middle sizes, well behind leans to the longest allowed, ahead leans to 3 letters.
+  - The child's own words score double. Words they found from a hint score normally (the unique-word double still applies).
 - It works on Normal and Easy games. Results show normally, with no separate child labelling.
 
 ## Hints
 
 - A lightbulb Hint button appears above the grid when you haven't touched the screen for a while. The player taps it. Hints are never shown automatically.
 - How often hints appear: Lots, Sometimes, Rarely, Very little or None. The default is 8 seconds with no touch. Adjustable in Settings and in the in-game ☰ menu.
-- Hints are 3-letter words only (a setting), except child players, who get 3- and 4-letter words. On Easy boards only everyday words are hinted.
+- Hints are 3-letter words only (a setting), except child players (see Child profile). On Easy boards only everyday words are hinted.
 - Hint uses are counted and shown in results.
 
 ## Party (phone to phone)
@@ -84,7 +88,14 @@ Together:
 - **Big-screen host mode:** the host device doesn't play. It shows the live "words found so far" for each player and the results for everyone to watch.
 - The host decides everything: it makes the board, starts the rounds and works out the scores. A phone that rejoins replaces its old connection.
 - The screen stays awake during play and setup.
-- **Results:** the animated reveal plays on every phone. Shared words appear first, then unique ones with sparkles. Scores roll up, the winner is shown with confetti and a fanfare, and last place gets a "Loser" label (nobody does if everyone tied). Every phone shows a summary with a Ready button, and running session standings carry across rounds.
+- **Results (v26 bar battle):** each player has a bar with their avatar and name underneath. Each word pops up above the bars, then flies into the bars of the players who found it, and the bars rise like a live battle. Shared words come first, then unique ones with sparkles. Default speed is about 15% quicker than v25.
+  - **Host in control:** the host's screen (or the big screen) runs the reveal and every phone shows the same word at the same moment. Only the host has Speed up and Skip, and they change every screen. A phone that loses touch with the host finishes the reveal by itself.
+  - **Each round is scored on its own.** No running totals. The bars stay up at the end.
+  - **Crown and poop:** the highest score gets a 👑 Winner label, the lowest a 💩 Loser label (ties share; nobody is Loser if everyone tied). The labels stay with those players into the next round, and when the result changes they move across to the new holders, or bounce if the same player keeps them. In round 1 they drop in.
+  - **Session trivia** cycles under the bars: most words, longest word, most unusual word (not an everyday word, highest letter value), most unique words, most wins, most 💩s, best single round, best average, and each player's session summary.
+  - Then every word found (tap for its meaning) and "Missed opportunity!".
+  - Players tap Ready and the host sees a ✓ Ready under their name. Only the host can start the next round.
+- **Between rounds:** when the host taps Start next round, every phone shows a 5-second loading screen ("Round N, Get ready…") with the players, their crown or 💩, the trivia card and a filling bar, then the normal round start.
 - Music and ticking only play on the host phone or big screen, so phones don't play music out of time with each other. Each player's phone still plays its own countdown beeps, letter and word sounds, the final beeps and the whistle.
 
 ## Results

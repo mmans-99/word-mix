@@ -4,7 +4,7 @@ Word Mix is a Boggle-style word game for phones, built as an offline web app (PW
 
 - Live game: https://mmans-99.github.io/word-mix/
 - Repo: https://github.com/mmans-99/word-mix (branch `main`, Pages serves the repo root)
-- Current version: **25** (see `APP_VERSION` in `app.js` and `VERSION` in `sw.js`)
+- Current version: **26** (see `APP_VERSION` in `app.js` and `VERSION` in `sw.js`)
 
 ## At the start of every chat
 
@@ -59,8 +59,9 @@ Tests:
 | `test_easy.py` | Easy mode boards and the Easy leaderboards |
 | `test_sound.py` | Sound settings, sound choices, in-game sound and music switches |
 | `test_pass_child.py` | Pass-and-play with a child player (double points) |
+| `test_pass_hints.py` | Pass-and-play child hints: always-there button, 5-second refill, reset on own word, sizes follow the player before, hinted words not doubled |
 | `test_daily.py` | Daily Puzzle and its leaderboards |
-| `test_child.py` | 3-phone Party game over WebRTC with a child player, score sharing, round 2. Add `screen` as a second argument for big-screen host mode. |
+| `test_child.py` | 3-phone Party game over WebRTC with a child player: child Hint button, results in step on every phone, host-only Speed up, crown and poop labels, trivia, loading screen, round 2 with the crown moving. Add `screen` as a second argument for big-screen host mode. |
 | `test_big_screen.py` | The big-screen host results show |
 | `check_boards.py` | Average words and everyday 5-letter words per 4×4 board, Normal and Easy |
 | `measure_boards.py` | Board stats for 4×4, 5×5 and 6×6 (add `easy` for Easy boards), with time per board |
