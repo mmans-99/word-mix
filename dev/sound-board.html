@@ -1,0 +1,711 @@
+<title>Word Mix Sound Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&display=swap" rel="stylesheet">
+<style>
+/* Layout: Word Mix's own look. Orange band on top, cards of sounds below, each sound a row with chunky play buttons. */
+:root {
+  --bg: #EEF1F5;
+  --ink: #2E2117;
+  --muted: #6B5D50;
+  --orange: #F26B21;
+  --orange-dk: #C8530F;
+  --card: #FFFFFF;
+  --card-sh: #D3D9E2;
+  --tile: #F6E7C4;
+  --tile-sh: #C9A974;
+  --tile-ink: #3A2614;
+  --sel: #FFC93A;
+  --sel-sh: #C9951A;
+  --blue: #2F6FDE;
+  --blue-sh: #1E4FA8;
+  --chip: #FFF1E6;
+  --band-ink: #FFFFFF;
+  --font: "Bricolage Grotesque", ui-rounded, "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1A1613; --ink: #F4ECE3; --muted: #B9AB9C; --card: #28211C; --card-sh: #0F0C0A;
+    --tile: #EAD5A8; --tile-sh: #9C7F4E; --chip: #3A2A1F; --blue: #4A84EA; --blue-sh: #2A55A6; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1A1613; --ink: #F4ECE3; --muted: #B9AB9C; --card: #28211C; --card-sh: #0F0C0A;
+  --tile: #EAD5A8; --tile-sh: #9C7F4E; --chip: #3A2A1F; --blue: #4A84EA; --blue-sh: #2A55A6; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.45; }
+.band { background: var(--orange); color: var(--band-ink); border-radius: 0 0 28px 28px; box-shadow: 0 5px 0 var(--orange-dk); }
+.wrap { max-width: 860px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.band .wrap { padding-block: 26px 24px; display: flex; flex-direction: column; gap: 8px; }
+.band h1 { margin: 0; font-size: clamp(30px, 7vw, 44px); font-weight: 800; letter-spacing: -0.5px; text-wrap: balance; }
+.band p { margin: 0; font-size: 17px; font-weight: 600; max-width: 60ch; }
+.band .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+main.wrap { padding-block: 26px 48px; display: flex; flex-direction: column; gap: 22px; }
+.card { background: var(--card); border-radius: 22px; box-shadow: 0 4px 0 var(--card-sh); padding: 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.card h2 { margin: 0; font-size: 24px; font-weight: 800; text-wrap: balance; }
+.card > p.lead { margin: -6px 0 0; color: var(--muted); font-weight: 600; }
+.label { font-size: 13px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); }
+.snd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; padding-top: 14px; border-top: 2px dashed var(--card-sh); }
+.snd h3 { margin: 0; font-size: 18px; font-weight: 800; }
+.snd p { margin: 0; color: var(--muted); font-size: 15px; font-weight: 500; grid-column: 1; }
+.snd .btns { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+@media (max-width: 560px) {
+  .snd { grid-template-columns: 1fr; }
+  .snd .btns { grid-column: 1; grid-row: auto; justify-content: flex-start; }
+}
+button { font: inherit; cursor: pointer; }
+.btn { border: 0; border-radius: 14px; min-height: 46px; padding: 0 16px; font-size: 16px; font-weight: 800; display: inline-flex; align-items: center; gap: 8px; background: var(--chip); color: var(--ink); box-shadow: 0 3px 0 var(--card-sh); transition: transform .08s; }
+.btn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--card-sh); }
+.btn .tri { width: 0; height: 0; border-left: 11px solid currentColor; border-top: 7px solid transparent; border-bottom: 7px solid transparent; }
+.btn.main { background: var(--blue); color: #FFFFFF; box-shadow: 0 3px 0 var(--blue-sh); }
+.btn.light { background: #FFFFFF; color: var(--orange-dk); box-shadow: 0 3px 0 var(--orange-dk); }
+.btn.dark { background: var(--orange-dk); color: #FFFFFF; box-shadow: 0 3px 0 #8E3A08; }
+.btn[aria-pressed="true"] { background: var(--sel); color: var(--tile-ink); box-shadow: 0 3px 0 var(--sel-sh); }
+.btn.playing { outline: 3px solid var(--orange); outline-offset: 2px; }
+.btn:focus-visible, .seg button:focus-visible, .switch:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+.pick { font-size: 12px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--orange-dk); }
+.note { margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--chip); color: var(--ink); font-size: 15px; font-weight: 600; }
+
+/* Startup preview board */
+.stage { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+.mini { position: relative; display: grid; grid-template-columns: repeat(4, 46px); gap: 6px; padding: 10px; border-radius: 18px; background: var(--card-sh); }
+.mini .t { width: 46px; height: 46px; border-radius: 10px; background: var(--tile); color: var(--tile-ink); box-shadow: 0 3px 0 var(--tile-sh); display: grid; place-items: center; font-size: 22px; font-weight: 800; }
+.mini .t.off { opacity: 0; transform: translateY(-14px) scale(.8); }
+.mini .t.land { animation: land .22s cubic-bezier(.3,1.6,.5,1) both; }
+@keyframes land { from { opacity: 0; transform: translateY(-14px) scale(.8); } to { opacity: 1; transform: none; } }
+.mini.shake { animation: shake .18s linear infinite; }
+@keyframes shake { 0%,100% { transform: translate(0,0) rotate(0); } 25% { transform: translate(-3px,1px) rotate(-1.5deg); } 75% { transform: translate(3px,-1px) rotate(1.5deg); } }
+.mini .cd { position: absolute; inset: 0; display: grid; place-items: center; font-size: 64px; font-weight: 800; color: #FFFFFF; text-shadow: 0 3px 0 var(--orange-dk); pointer-events: none; }
+.mini .cd span { animation: pop .5s ease-out both; }
+@keyframes pop { from { transform: scale(1.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Try-it grid */
+.try { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+.grid { display: grid; grid-template-columns: repeat(4, 64px); gap: 8px; padding: 12px; border-radius: 20px; background: var(--card-sh); touch-action: none; user-select: none; -webkit-user-select: none; }
+.grid .t { width: 64px; height: 64px; border-radius: 14px; background: var(--tile); color: var(--tile-ink); box-shadow: 0 4px 0 var(--tile-sh); display: grid; place-items: center; font-size: 28px; font-weight: 800; }
+.grid .t.on { background: var(--sel); box-shadow: 0 4px 0 var(--sel-sh); }
+.grid .t.bad { animation: bad .25s; }
+@keyframes bad { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+.trylog { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 8px; }
+.word { font-size: 30px; font-weight: 800; letter-spacing: 2px; min-height: 42px; overflow-wrap: anywhere; }
+.verdict { font-weight: 700; color: var(--muted); min-height: 24px; }
+
+/* Countdown readout */
+.clock { font-variant-numeric: tabular-nums; font-size: 44px; font-weight: 800; min-width: 3ch; color: var(--orange-dk); }
+.tally { font-variant-numeric: tabular-nums; font-size: 44px; font-weight: 800; color: var(--orange-dk); min-width: 3ch; }
+
+/* Volume */
+.vol { display: grid; grid-template-columns: 9ch minmax(0, 1fr) 4ch; gap: 12px; align-items: center; font-weight: 700; }
+.vol output { font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+input[type="range"] { width: 100%; accent-color: var(--orange); }
+.toggle-row { display: flex; justify-content: space-between; align-items: center; gap: 14px; font-weight: 700; }
+.switch { width: 58px; height: 34px; border-radius: 999px; border: 0; background: var(--card-sh); position: relative; flex: none; }
+.switch::after { content: ""; position: absolute; top: 4px; left: 4px; width: 26px; height: 26px; border-radius: 50%; background: #FFFFFF; transition: transform .15s; }
+.switch[aria-checked="true"] { background: var(--blue); }
+.switch[aria-checked="true"]::after { transform: translateX(24px); }
+.picks { font-weight: 700; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .mini.shake, .mini .t.land, .grid .t.bad, .mini .cd span { animation: none; } }
+</style>
+
+<header class="band">
+  <div class="wrap">
+    <h1>Word Mix sounds</h1>
+    <p>Tap any sound to hear it. Where there are two versions, the one you played last is marked as your pick, and your picks are listed at the bottom to send back to me.</p>
+    <div class="row">
+      <button class="btn light" id="all-start" type="button"><span class="tri"></span>Round start</button>
+      <button class="btn light" id="all-results" type="button"><span class="tri"></span>Results</button>
+      <button class="btn dark" id="stop" type="button">Stop all sound</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="note">Turn your volume up. On iPhone and iPad, switch off silent mode or nothing will play. Every sound is made live by the phone, so the game stays small and works offline.</p>
+
+  <section class="card" aria-labelledby="h-start">
+    <h2 id="h-start">Board startup</h2>
+    <p class="lead">Plays on the big screen, or on the host phone, as a round begins.</p>
+    <div class="stage">
+      <div class="mini" id="mini" aria-hidden="true"></div>
+      <button class="btn main" data-play="startSeq" type="button"><span class="tri"></span>Play all three in order</button>
+    </div>
+    <div class="snd"><h3>Dice shake</h3><p>Letter cubes tumbling around the dome: plastic ticks and wooden knocks.</p>
+      <div class="btns"><button class="btn" data-play="shake" type="button"><span class="tri"></span>Play</button></div></div>
+    <div class="snd"><h3>Drop and settle</h3><p>A crisp clack for each of the 16 tiles as the grid locks into place.</p>
+      <div class="btns"><button class="btn" data-play="drop" type="button"><span class="tri"></span>Play</button></div></div>
+    <div class="snd"><h3>3-beat countdown</h3><p>Beep, beep, BEEP. Everyone starts on the last one.</p>
+      <div class="btns"><button class="btn" data-play="count" type="button"><span class="tri"></span>Play</button></div></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-play">
+    <h2 id="h-play">While you play</h2>
+    <p class="lead">These play on each player's own phone.</p>
+    <div class="snd"><h3>Letter chime</h3><p>Each letter you swipe through chimes a little higher, so you can hear how long your word is.</p>
+      <div class="btns">
+        <button class="btn" data-play="tile" data-group="tile" data-variant="marimba" type="button"><span class="tri"></span>Marimba</button>
+        <button class="btn" data-play="tile" data-group="tile" data-variant="synth" type="button"><span class="tri"></span>Synth</button>
+      </div></div>
+    <div class="snd"><h3>Word found</h3><p>A normal word, 3 to 5 letters.</p>
+      <div class="btns">
+        <button class="btn" data-play="valid" data-group="valid" data-variant="pop" type="button"><span class="tri"></span>Pop chime</button>
+        <button class="btn" data-play="valid" data-group="valid" data-variant="bell" type="button"><span class="tri"></span>Bell</button>
+      </div></div>
+    <div class="snd"><h3>Long word found</h3><p>6 letters or more.</p>
+      <div class="btns">
+        <button class="btn" data-play="long" data-group="long" data-variant="cascade" type="button"><span class="tri"></span>Arcade cascade</button>
+        <button class="btn" data-play="long" data-group="long" data-variant="brass" type="button"><span class="tri"></span>Brass sting</button>
+      </div></div>
+    <div class="snd"><h3>Wrong move</h3><p>Swiping to a letter that isn't touching, or one you've already used.</p>
+      <div class="btns">
+        <button class="btn" data-play="bad" data-group="bad" data-variant="thump" type="button"><span class="tri"></span>Dry thump</button>
+        <button class="btn" data-play="bad" data-group="bad" data-variant="buzz" type="button"><span class="tri"></span>Soft buzz</button>
+      </div></div>
+    <div class="snd"><h3>Not a word</h3><p>A short error shake.</p>
+      <div class="btns"><button class="btn" data-play="notword" type="button"><span class="tri"></span>Play</button></div></div>
+    <div class="snd"><h3>Already found</h3><p>A soft boing.</p>
+      <div class="btns"><button class="btn" data-play="again" type="button"><span class="tri"></span>Play</button></div></div>
+
+    <span class="label">Try it</span>
+    <div class="try">
+      <div class="grid" id="grid" aria-label="Practice grid. Swipe across touching letters."></div>
+      <div class="trylog">
+        <div class="word" id="tword" aria-live="polite"></div>
+        <div class="verdict" id="tverdict">Swipe across touching letters. Release to submit.</div>
+        <p class="note" style="margin:0">In this practice grid every path of 3 or more letters counts as a word, so you can hear the word sounds. Swipe the same path twice to hear Already found. The real game checks the dictionary.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="h-music">
+    <h2 id="h-music">Music and the last 10 seconds</h2>
+    <p class="lead">Background music plays on the big screen, or on the host phone, during a round.</p>
+    <div class="snd"><h3>Background groove</h3><p>A light, mid-tempo jazz-pop loop: soft drums, bass and electric piano.</p>
+      <div class="btns"><button class="btn" id="music-btn" data-play="music" type="button"><span class="tri"></span>Play music</button></div></div>
+    <div class="snd"><h3>Ticking overlay</h3><p>Plays over the music for the last 10 seconds.</p>
+      <div class="btns">
+        <button class="btn" data-play="overlay" data-group="overlay" data-variant="tick" type="button"><span class="tri"></span>Clock tick</button>
+        <button class="btn" data-play="overlay" data-group="overlay" data-variant="heart" type="button"><span class="tri"></span>Heartbeat</button>
+      </div></div>
+    <div class="snd"><h3>Time's up</h3><p>Ends the round.</p>
+      <div class="btns">
+        <button class="btn" data-play="end" data-group="end" data-variant="buzzer" type="button"><span class="tri"></span>Buzzer</button>
+        <button class="btn" data-play="end" data-group="end" data-variant="whistle" type="button"><span class="tri"></span>Whistle</button>
+      </div></div>
+    <div class="stage">
+      <button class="btn main" data-play="final10" type="button"><span class="tri"></span>Play the last 10 seconds</button>
+      <div class="clock" id="clock" aria-live="off">0:10</div>
+    </div>
+    <p class="note" style="margin:0">The last 10 seconds speeds the music up, adds your chosen ticking overlay, plays urgent beeps for the final 3 seconds, then your chosen Time's up sound.</p>
+  </section>
+
+  <section class="card" aria-labelledby="h-res">
+    <h2 id="h-res">Results reveal</h2>
+    <p class="lead">Plays during the word-by-word reveal.</p>
+    <div class="snd"><h3>Shared word swish</h3><p>A sharp swish as a word more than one player found appears. Word Mix doesn't cross shared words out, so the swish plays as they appear.</p>
+      <div class="btns"><button class="btn" data-play="swish" type="button"><span class="tri"></span>Play</button></div></div>
+    <div class="snd"><h3>Unique word sparkle</h3><p>A golden chime flourish for a word only one player found.</p>
+      <div class="btns"><button class="btn" data-play="sparkle" type="button"><span class="tri"></span>Play</button></div></div>
+    <div class="snd"><h3>Score counter</h3><p>A fast scoreboard tick as points roll up.</p>
+      <div class="btns"><span class="tally" id="tally" aria-live="off">0</span><button class="btn" data-play="tally" type="button"><span class="tri"></span>Play</button></div></div>
+    <div class="snd"><h3>Winner</h3><p>Confetti pop, a short fanfare and applause.</p>
+      <div class="btns"><button class="btn" data-play="win" type="button"><span class="tri"></span>Play</button></div></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-set">
+    <h2 id="h-set">Sound settings</h2>
+    <p class="lead">These are the controls the game would have. They work on this page too.</p>
+    <div class="vol"><label for="v-music">Music</label><input type="range" id="v-music" min="0" max="100" value="60"><output id="o-music" for="v-music">60</output></div>
+    <div class="vol"><label for="v-sfx">Effects</label><input type="range" id="v-sfx" min="0" max="100" value="80"><output id="o-sfx" for="v-sfx">80</output></div>
+    <div class="toggle-row"><span id="l-mute">Music off, effects on</span><button class="switch" id="mute" role="switch" aria-checked="false" aria-labelledby="l-mute" type="button"></button></div>
+    <p class="note" style="margin:0">With Music off you can play your own music or a podcast from another app while still hearing the game's effects.</p>
+  </section>
+
+  <section class="card" aria-labelledby="h-picks">
+    <h2 id="h-picks">Your picks</h2>
+    <p class="picks" id="picks"></p>
+    <div><button class="btn main" id="copy" type="button">Copy my picks</button></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var ctx = null, master, sfx, music, shimmerIn, noiseBuf;
+  var live = new Set(), timers = [];
+  var vol = { music: 0.6, sfx: 0.8, mute: false };
+  var pick = { tile: 'marimba', valid: 'pop', long: 'cascade', bad: 'thump', overlay: 'tick', end: 'buzzer' };
+  var NAMES = { marimba: 'Marimba', synth: 'Synth', pop: 'Pop chime', bell: 'Bell', cascade: 'Arcade cascade', brass: 'Brass sting', thump: 'Dry thump', buzz: 'Soft buzz', tick: 'Clock tick', heart: 'Heartbeat', buzzer: 'Buzzer', whistle: 'Whistle' };
+  var GROUPS = { tile: 'Letter chime', valid: 'Word found', long: 'Long word', bad: 'Wrong move', overlay: 'Ticking overlay', end: "Time's up" };
+
+  function ac() {
+    if (!ctx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC();
+      var comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -12; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.2;
+      master = ctx.createGain(); master.gain.value = 0.9;
+      sfx = ctx.createGain(); music = ctx.createGain();
+      sfx.connect(master); music.connect(master); master.connect(comp); comp.connect(ctx.destination);
+      // Shimmer: a short echo used by the sparkle.
+      shimmerIn = ctx.createGain();
+      var dl = ctx.createDelay(1); dl.delayTime.value = 0.11;
+      var fb = ctx.createGain(); fb.gain.value = 0.38;
+      shimmerIn.connect(sfx); shimmerIn.connect(dl); dl.connect(fb); fb.connect(dl); dl.connect(sfx);
+      var len = ctx.sampleRate * 2;
+      noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+      var d = noiseBuf.getChannelData(0);
+      for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      applyVol();
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function now() { return ac().currentTime; }
+  function applyVol() {
+    if (!ctx) return;
+    sfx.gain.setTargetAtTime(vol.sfx, ctx.currentTime, 0.02);
+    music.gain.setTargetAtTime(vol.mute ? 0 : vol.music * 0.55, ctx.currentTime, 0.02);
+  }
+  function track(src) { live.add(src); src.onended = function () { live.delete(src); }; }
+  function at(t, fn) { timers.push(setTimeout(fn, Math.max(0, (t - ctx.currentTime) * 1000))); }
+
+  // Envelopes
+  function env(p, t, peak, a, d) {
+    p.setValueAtTime(0.0001, t);
+    p.linearRampToValueAtTime(Math.max(0.0002, peak), t + a);
+    p.exponentialRampToValueAtTime(0.0001, t + a + Math.max(0.01, d));
+  }
+  function sus(p, t, peak, a, hold, r) {
+    p.setValueAtTime(0.0001, t);
+    p.linearRampToValueAtTime(peak, t + a);
+    p.setValueAtTime(peak, t + a + hold);
+    p.linearRampToValueAtTime(0.0001, t + a + hold + r);
+  }
+  // A single oscillator note.
+  function tone(o) {
+    var c = ac(), t = o.t == null ? c.currentTime : o.t, a = o.attack == null ? 0.004 : o.attack;
+    var osc = c.createOscillator();
+    osc.type = o.type || 'sine';
+    osc.frequency.setValueAtTime(o.f, t);
+    if (o.f2) osc.frequency.exponentialRampToValueAtTime(o.f2, t + (o.glide || o.dur));
+    if (o.detune) osc.detune.value = o.detune;
+    var g = c.createGain();
+    env(g.gain, t, o.vol == null ? 0.2 : o.vol, a, o.dur);
+    var node = osc;
+    if (o.lp) { var f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lp; osc.connect(f); node = f; }
+    node.connect(g); g.connect(o.out || sfx);
+    osc.start(t); osc.stop(t + a + o.dur + 0.05); track(osc);
+    return { osc: osc, gain: g };
+  }
+  // A burst of filtered noise.
+  function noise(o) {
+    var c = ac(), t = o.t == null ? c.currentTime : o.t, a = o.attack == null ? 0.002 : o.attack;
+    var s = c.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+    var f = c.createBiquadFilter(); f.type = o.ft || 'bandpass';
+    f.frequency.setValueAtTime(o.f || 2000, t);
+    if (o.f2) f.frequency.exponentialRampToValueAtTime(o.f2, t + a + o.dur);
+    f.Q.value = o.q == null ? 1 : o.q;
+    var g = c.createGain(); env(g.gain, t, o.vol == null ? 0.2 : o.vol, a, o.dur);
+    s.connect(f); f.connect(g);
+    var out = g;
+    if (o.pan != null && c.createStereoPanner) { var p = c.createStereoPanner(); p.pan.value = o.pan; g.connect(p); out = p; }
+    out.connect(o.out || sfx);
+    s.start(t, Math.random() * 1.5); s.stop(t + a + o.dur + 0.05); track(s);
+  }
+  function brass(freqs, t, dur, vol) {
+    var c = ac();
+    var f = c.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 1.5;
+    f.frequency.setValueAtTime(450, t); f.frequency.linearRampToValueAtTime(3400, t + 0.05); f.frequency.exponentialRampToValueAtTime(1300, t + dur);
+    var g = c.createGain(); sus(g.gain, t, vol, 0.025, Math.max(0.02, dur - 0.1), 0.12);
+    f.connect(g); g.connect(sfx);
+    freqs.forEach(function (fr) {
+      [-9, 9].forEach(function (dt) {
+        var o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = fr; o.detune.value = dt;
+        o.connect(f); o.start(t); o.stop(t + dur + 0.25); track(o);
+      });
+    });
+  }
+
+  // ---------- Board startup ----------
+  function shake(t0) {
+    var D = 1.5, shakes = 9;
+    for (var k = 0; k < shakes; k++) {
+      var ts = t0 + k * (D / shakes) + Math.random() * 0.02;
+      var fade = Math.min(1, (k + 1) / 2) * (k === shakes - 1 ? 0.6 : 1);
+      var hits = 7 + Math.floor(Math.random() * 6);
+      for (var i = 0; i < hits; i++) {
+        var th = ts + Math.random() * 0.09;
+        var v = (0.12 + Math.random() * 0.2) * fade;
+        if (Math.random() < 0.62) noise({ t: th, dur: 0.01 + Math.random() * 0.02, f: 1800 + Math.random() * 2800, q: 7, vol: v, pan: Math.random() * 1.2 - 0.6 });
+        else tone({ t: th, f: 300 + Math.random() * 380, dur: 0.035, type: 'triangle', vol: v * 0.8 });
+      }
+    }
+    noise({ t: t0, dur: D, f: 600, ft: 'lowpass', q: 0.4, vol: 0.05, attack: 0.15 });
+    return D;
+  }
+  function drop(t0, onTile) {
+    var gap = 0.062;
+    for (var i = 0; i < 16; i++) {
+      var t = t0 + i * gap + Math.random() * 0.01;
+      var row = Math.floor(i / 4);
+      noise({ t: t, dur: 0.014, f: 2600 + row * 250, q: 8, vol: 0.32, pan: ((i % 4) - 1.5) * 0.3 });
+      tone({ t: t, f: 1300 + row * 90, f2: 600, glide: 0.03, dur: 0.03, type: 'triangle', vol: 0.12 });
+      tone({ t: t, f: 210, dur: 0.06, vol: 0.09 });
+      if (onTile) (function (k) { at(t, function () { onTile(k); }); })(i);
+    }
+    var end = t0 + 16 * gap + 0.05;
+    tone({ t: end, f: 140, f2: 70, dur: 0.12, vol: 0.25 });
+    noise({ t: end, dur: 0.04, f: 900, ft: 'lowpass', vol: 0.12 });
+    return 16 * gap + 0.2;
+  }
+  function count(t0, onBeat) {
+    [0, 0.85, 1.7].forEach(function (dt, i) {
+      var t = t0 + dt, big = i === 2;
+      tone({ t: t, f: big ? 1760 : 880, dur: big ? 0.45 : 0.13, vol: big ? 0.28 : 0.22 });
+      tone({ t: t, f: big ? 1760 : 880, dur: big ? 0.4 : 0.1, type: 'triangle', vol: big ? 0.08 : 0.05 });
+      if (big) tone({ t: t, f: 880, dur: 0.45, vol: 0.1 });
+      if (onBeat) at(t, function () { onBeat(i); });
+    });
+    return 2.2;
+  }
+  var LET = 'RATESHOPLINKMUDY'.split('');
+  var mini = document.getElementById('mini');
+  function drawMini(state) {
+    mini.innerHTML = LET.map(function (l) { return '<div class="t' + (state === 'off' ? ' off' : '') + '">' + l + '</div>'; }).join('') + '<div class="cd" id="cd"></div>';
+  }
+  drawMini('on');
+  function startSeq(t0) {
+    drawMini('off');
+    mini.classList.add('shake');
+    var d = shake(t0);
+    at(t0 + d, function () { mini.classList.remove('shake'); });
+    var d2 = drop(t0 + d + 0.1, function (k) { var el = mini.children[k]; el.classList.remove('off'); el.classList.add('land'); });
+    var tc = t0 + d + 0.1 + d2 + 0.25;
+    count(tc, function (i) { var cd = document.getElementById('cd'); if (cd) cd.innerHTML = '<span>' + (i === 2 ? 'GO' : 3 - i) + '</span>'; });
+    at(tc + 2.3, function () { var cd = document.getElementById('cd'); if (cd) cd.innerHTML = ''; });
+    return tc + 2.3 - t0;
+  }
+
+  // ---------- Gameplay ----------
+  var SCALE = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.51, 1567.98, 1760, 2093, 2349.32, 2637.02, 3135.96, 3520, 4186.01];
+  function letter(t, i) {
+    var f = SCALE[Math.min(i, SCALE.length - 1)];
+    if (pick.tile === 'marimba') {
+      tone({ t: t, f: f, dur: 0.38, vol: 0.22, attack: 0.002 });
+      tone({ t: t, f: f * 4, dur: 0.05, vol: 0.06, attack: 0.001 });
+      tone({ t: t, f: f * 0.5, dur: 0.2, vol: 0.06, attack: 0.002 });
+    } else {
+      tone({ t: t, f: f, dur: 0.22, type: 'square', vol: 0.06, lp: 2400, attack: 0.004 });
+      tone({ t: t, f: f * 2, dur: 0.12, type: 'triangle', vol: 0.05, attack: 0.004 });
+    }
+  }
+  function tileDemo(t0) { for (var i = 0; i < 7; i++) letter(t0 + i * 0.16, i); return 1.4; }
+  function valid(t) {
+    if (pick.valid === 'pop') {
+      tone({ t: t, f: 380, f2: 1250, glide: 0.035, dur: 0.06, vol: 0.28 });
+      tone({ t: t + 0.04, f: 1567.98, dur: 0.5, vol: 0.16 });
+      tone({ t: t + 0.04, f: 2093, dur: 0.35, vol: 0.09 });
+      tone({ t: t + 0.04, f: 3135.96, dur: 0.18, vol: 0.04 });
+    } else {
+      var f = 1318.51;
+      [[1, 0.2, 0.95], [2, 0.07, 0.6], [2.76, 0.06, 0.4], [5.4, 0.03, 0.2]].forEach(function (p) { tone({ t: t, f: f * p[0], dur: p[2], vol: p[1], attack: 0.002 }); });
+    }
+    return 0.7;
+  }
+  function longWord(t) {
+    if (pick.long === 'cascade') {
+      var n = [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98, 2093, 2637.02];
+      n.forEach(function (f, i) { tone({ t: t + i * 0.055, f: f, dur: 0.13, type: 'square', vol: 0.075, lp: 3500 }); });
+      var e = t + n.length * 0.055;
+      [2093, 2637.02, 3135.96].forEach(function (f, i) { tone({ t: e + i * 0.01, f: f, dur: 0.6, vol: 0.08, out: shimmerIn }); });
+      return 1.2;
+    }
+    brass([261.63, 329.63, 392], t, 0.11, 0.05);
+    brass([349.23, 440, 523.25, 698.46], t + 0.14, 0.62, 0.045);
+    return 1;
+  }
+  function bad(t) {
+    if (pick.bad === 'thump') {
+      tone({ t: t, f: 150, f2: 55, glide: 0.1, dur: 0.12, vol: 0.4 });
+      noise({ t: t, dur: 0.05, f: 350, ft: 'lowpass', vol: 0.14 });
+    } else {
+      tone({ t: t, f: 98, dur: 0.15, type: 'square', vol: 0.11, lp: 650, attack: 0.01 });
+      tone({ t: t, f: 103, dur: 0.15, type: 'square', vol: 0.07, lp: 650, attack: 0.01 });
+    }
+    return 0.25;
+  }
+  function thrum(t, f, dur) {
+    var c = ac();
+    var o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+    var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 950;
+    var g = c.createGain(); sus(g.gain, t, 0.22, 0.01, dur - 0.05, 0.04);
+    var trem = c.createGain(); trem.gain.value = 0.5;
+    var lfo = c.createOscillator(); lfo.frequency.value = 24;
+    var depth = c.createGain(); depth.gain.value = 0.5;
+    lfo.connect(depth); depth.connect(trem.gain);
+    o.connect(lp); lp.connect(g); g.connect(trem); trem.connect(sfx);
+    o.start(t); o.stop(t + dur + 0.05); lfo.start(t); lfo.stop(t + dur + 0.05); track(o); track(lfo);
+  }
+  function notWord(t) { thrum(t, 165, 0.15); thrum(t + 0.17, 128, 0.2); return 0.45; }
+  function again(t) {
+    var c = ac();
+    var o = c.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(240, t); o.frequency.exponentialRampToValueAtTime(420, t + 0.12); o.frequency.exponentialRampToValueAtTime(330, t + 0.4);
+    var lfo = c.createOscillator(); lfo.frequency.value = 15;
+    var depth = c.createGain(); depth.gain.setValueAtTime(110, t); depth.gain.exponentialRampToValueAtTime(1, t + 0.42);
+    lfo.connect(depth); depth.connect(o.frequency);
+    var g = c.createGain(); env(g.gain, t, 0.24, 0.01, 0.42);
+    o.connect(g); g.connect(sfx);
+    o.start(t); o.stop(t + 0.5); lfo.start(t); lfo.stop(t + 0.5); track(o); track(lfo);
+    return 0.5;
+  }
+
+  // ---------- Music ----------
+  // Fmaj7, Em7, Dm7, Cmaj7: one chord per bar, 16 steps a bar.
+  var CH = [[174.61, 220, 261.63, 329.63], [164.81, 196, 246.94, 293.66], [146.83, 174.61, 220, 261.63], [130.81, 164.81, 196, 246.94]];
+  var BASS = [87.31, 82.41, 73.42, 65.41];
+  var M = { on: false, base: 100, bpm: 100, step: 0, next: 0, iv: null, ramp: null, stopAt: null };
+  function startMusic() {
+    var c = ac();
+    if (M.on) return;
+    M.on = true; M.step = 0; M.bpm = M.base; M.next = c.currentTime + 0.08;
+    M.iv = setInterval(sched, 25); sched(); musicBtn();
+  }
+  function stopMusic() { M.on = false; clearInterval(M.iv); M.iv = null; M.ramp = null; M.stopAt = null; musicBtn(); }
+  function sched() {
+    while (M.on && M.next < ctx.currentTime + 0.15) {
+      if (M.stopAt && M.next >= M.stopAt) { stopMusic(); return; }
+      if (M.ramp) {
+        var k = Math.min(1, Math.max(0, (M.next - M.ramp.t0) / (M.ramp.t1 - M.ramp.t0)));
+        M.bpm = M.ramp.from + (M.ramp.to - M.ramp.from) * k;
+      }
+      var sd = 60 / M.bpm / 4;
+      playStep(M.step, M.next + (M.step % 2 ? sd * 0.14 : 0), sd);
+      M.next += sd; M.step = (M.step + 1) % 64;
+    }
+  }
+  function playStep(s, t, sd) {
+    var bar = s >> 4, st = s & 15, ch = CH[bar], root = BASS[bar];
+    if (st === 0 || st === 8) tone({ t: t, f: 130, f2: 45, glide: 0.11, dur: 0.2, vol: 0.34, out: music });
+    if (st === 11) tone({ t: t, f: 120, f2: 45, glide: 0.1, dur: 0.15, vol: 0.18, out: music });
+    if (st === 4 || st === 12) { noise({ t: t, dur: 0.11, f: 1800, q: 0.8, vol: 0.12, out: music }); tone({ t: t, f: 190, dur: 0.05, type: 'triangle', vol: 0.05, out: music }); }
+    if (st % 2 === 0) noise({ t: t, dur: 0.03, f: 7500, ft: 'highpass', vol: st % 4 === 2 ? 0.05 : 0.03, out: music });
+    var b = { 0: [root, 3], 3: [root, 1.5], 6: [root * 1.5, 1.5], 8: [root, 2], 11: [root * 2, 1], 14: [root * 1.5, 1.5] }[st];
+    if (b) { tone({ t: t, f: b[0], dur: sd * b[1], type: 'triangle', vol: 0.2, lp: 700, out: music }); tone({ t: t, f: b[0], dur: sd * b[1], vol: 0.12, out: music }); }
+    if (st === 0) ch.forEach(function (f) { tone({ t: t, f: f * 2, dur: sd * 7, vol: 0.016, attack: 0.04, out: music }); });
+    if (st === 6 || st === 10) ch.forEach(function (f) {
+      tone({ t: t, f: f * 2, dur: sd * 1.4, vol: 0.03, attack: 0.006, out: music });
+      tone({ t: t, f: f * 4, dur: sd * 0.8, type: 'triangle', vol: 0.006, attack: 0.006, out: music });
+    });
+    if (bar === 3 && (st === 12 || st === 13 || st === 14)) tone({ t: t, f: [1046.5, 987.77, 783.99][st - 12], dur: sd * 2, vol: 0.035, out: music });
+  }
+  var musicBtnEl = document.getElementById('music-btn');
+  function musicBtn() { musicBtnEl.innerHTML = M.on ? 'Stop music' : '<span class="tri"></span>Play music'; musicBtnEl.classList.toggle('playing', M.on); }
+
+  // ---------- Last 10 seconds ----------
+  function clockTick(t, hi) {
+    noise({ t: t, dur: 0.02, f: hi ? 3300 : 2400, q: 10, vol: 0.32 });
+    tone({ t: t, f: hi ? 1800 : 1300, dur: 0.03, vol: 0.08 });
+  }
+  function heart(t) {
+    tone({ t: t, f: 75, f2: 45, glide: 0.15, dur: 0.16, vol: 0.55 });
+    tone({ t: t + 0.22, f: 65, f2: 40, glide: 0.13, dur: 0.14, vol: 0.4 });
+    noise({ t: t, dur: 0.05, f: 200, ft: 'lowpass', vol: 0.12 });
+  }
+  function overlay(t0, secs) {
+    for (var s = 0; s < secs; s++) {
+      if (pick.overlay === 'tick') { clockTick(t0 + s, true); clockTick(t0 + s + 0.5, false); }
+      else heart(t0 + s);
+    }
+    return secs;
+  }
+  function urgent(t, i) {
+    var f = 988 * (1 + i * 0.12);
+    tone({ t: t, f: f, dur: 0.1, type: 'square', vol: 0.1, lp: 3000 });
+    tone({ t: t + 0.18, f: f, dur: 0.1, type: 'square', vol: 0.1, lp: 3000 });
+  }
+  function endSound(t) {
+    var c = ac();
+    if (pick.end === 'buzzer') {
+      var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1600;
+      var g = c.createGain(); sus(g.gain, t, 0.24, 0.01, 0.85, 0.08);
+      lp.connect(g); g.connect(sfx);
+      [[110, 'sawtooth'], [116, 'sawtooth'], [55, 'square']].forEach(function (p) {
+        var o = c.createOscillator(); o.type = p[1]; o.frequency.value = p[0]; o.connect(lp); o.start(t); o.stop(t + 1); track(o);
+      });
+      return 1.1;
+    }
+    [[0, 0.12], [0.22, 0.12], [0.44, 0.75]].forEach(function (p) {
+      var tt = t + p[0];
+      var o = c.createOscillator(); o.frequency.value = 2650;
+      var lfo = c.createOscillator(); lfo.frequency.value = 38;
+      var dp = c.createGain(); dp.gain.value = 240;
+      lfo.connect(dp); dp.connect(o.frequency);
+      var g = c.createGain(); sus(g.gain, tt, 0.13, 0.015, p[1], 0.04);
+      o.connect(g); g.connect(sfx);
+      o.start(tt); o.stop(tt + p[1] + 0.1); lfo.start(tt); lfo.stop(tt + p[1] + 0.1); track(o); track(lfo);
+      noise({ t: tt, dur: p[1], f: 2650, q: 4, vol: 0.04, attack: 0.01 });
+    });
+    return 1.3;
+  }
+  var clockEl = document.getElementById('clock');
+  function final10(t0) {
+    if (!M.on) startMusic();
+    M.ramp = { t0: t0, t1: t0 + 10, from: M.base, to: M.base * 1.45 };
+    M.stopAt = t0 + 10;
+    overlay(t0, 10);
+    for (var s = 0; s < 10; s++) {
+      (function (s) { at(t0 + s, function () { clockEl.textContent = '0:' + String(10 - s).padStart(2, '0'); }); })(s);
+      if (s >= 7) urgent(t0 + s, s - 7);
+    }
+    at(t0 + 10, function () { clockEl.textContent = '0:00'; });
+    endSound(t0 + 10);
+    at(t0 + 12, function () { clockEl.textContent = '0:10'; });
+    return 11.5;
+  }
+
+  // ---------- Results ----------
+  function swish(t) { noise({ t: t, dur: 0.26, f: 6500, f2: 700, q: 1.4, vol: 0.42, attack: 0.03 }); return 0.4; }
+  function sparkle(t) {
+    [1567.98, 2093, 2637.02, 3135.96, 4186.01].forEach(function (f, i) { tone({ t: t + i * 0.045, f: f, dur: 0.45, vol: 0.07, out: shimmerIn }); });
+    tone({ t: t, f: 1046.5, dur: 0.8, type: 'triangle', vol: 0.05 });
+    for (var i = 0; i < 7; i++) tone({ t: t + 0.15 + Math.random() * 0.45, f: 3000 + Math.random() * 3000, dur: 0.1, vol: 0.025, out: shimmerIn });
+    return 1;
+  }
+  var tallyEl = document.getElementById('tally');
+  function tally(t, n) {
+    var dur = 1.2 + n * 0.02;
+    for (var i = 1; i <= n; i++) {
+      var tt = t + dur * Math.pow(i / n, 1.25);
+      tone({ t: tt, f: 1500 + i * 22, dur: 0.012, type: 'square', vol: 0.05, lp: 6000, attack: 0.001 });
+      (function (i) { at(tt, function () { tallyEl.textContent = i; }); })(i);
+    }
+    tone({ t: t + dur + 0.05, f: 2093, dur: 0.35, vol: 0.12 });
+    tone({ t: t + dur + 0.05, f: 3135.96, dur: 0.22, vol: 0.05 });
+    return dur + 0.5;
+  }
+  function win(t) {
+    noise({ t: t, dur: 0.08, f: 3000, ft: 'lowpass', vol: 0.5 });
+    tone({ t: t, f: 190, f2: 50, glide: 0.14, dur: 0.16, vol: 0.45 });
+    for (var i = 0; i < 26; i++) noise({ t: t + 0.03 + Math.random() * 0.5, dur: 0.006, f: 3000 + Math.random() * 4000, q: 3, vol: 0.12, pan: Math.random() * 1.6 - 0.8 });
+    var f = t + 0.15;
+    brass([392, 783.99], f, 0.1, 0.05);
+    brass([392, 783.99], f + 0.14, 0.1, 0.05);
+    brass([392, 783.99], f + 0.28, 0.1, 0.05);
+    brass([261.63, 329.63, 392, 523.25], f + 0.44, 0.9, 0.045);
+    for (var k = 0; k < 230; k++) {
+      var u = Math.pow(Math.random(), 1.5);
+      noise({ t: t + 0.35 + u * 3.2, dur: 0.012 + Math.random() * 0.02, f: 1000 + Math.random() * 1600, q: 1.4, vol: (0.03 + Math.random() * 0.05) * Math.sqrt(1 - u * 0.9), pan: Math.random() * 1.6 - 0.8 });
+    }
+    return 3.8;
+  }
+  function resultsSeq(t0) {
+    swish(t0); swish(t0 + 0.9);
+    sparkle(t0 + 1.8);
+    tally(t0 + 3, 18);
+    win(t0 + 5);
+    return 9;
+  }
+
+  // ---------- Try-it grid ----------
+  var gridEl = document.getElementById('grid'), tword = document.getElementById('tword'), tverdict = document.getElementById('tverdict');
+  gridEl.innerHTML = LET.map(function (l, i) { return '<div class="t" data-i="' + i + '">' + l + '</div>'; }).join('');
+  var path = [], drawing = false, found = new Set(), lastBad = -1;
+  function adj(a, b) { var ra = a >> 2, ca = a & 3, rb = b >> 2, cb = b & 3; return Math.abs(ra - rb) <= 1 && Math.abs(ca - cb) <= 1 && a !== b; }
+  function paint() {
+    Array.prototype.forEach.call(gridEl.children, function (el, i) { el.classList.toggle('on', path.indexOf(i) >= 0); });
+    tword.textContent = path.map(function (i) { return LET[i]; }).join('');
+  }
+  function flagBad(i) {
+    if (i === lastBad) return;
+    lastBad = i; bad(now());
+    var el = gridEl.children[i]; el.classList.remove('bad'); void el.offsetWidth; el.classList.add('bad');
+  }
+  function tileAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    if (!el || !el.classList.contains('t') || !gridEl.contains(el)) return -1;
+    var r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (Math.hypot(x - cx, y - cy) > r.width * 0.42) return -1;
+    return +el.getAttribute('data-i');
+  }
+  gridEl.addEventListener('pointerdown', function (e) {
+    var i = tileAt(e.clientX, e.clientY); if (i < 0) return;
+    ac(); drawing = true; path = [i]; lastBad = -1; letter(now(), 0); paint();
+    try { gridEl.setPointerCapture(e.pointerId); } catch (err) {}
+    tverdict.textContent = '';
+  });
+  gridEl.addEventListener('pointermove', function (e) {
+    if (!drawing) return;
+    var i = tileAt(e.clientX, e.clientY); if (i < 0 || i === path[path.length - 1]) return;
+    if (path.length > 1 && i === path[path.length - 2]) { path.pop(); lastBad = -1; paint(); return; }
+    if (path.indexOf(i) >= 0) { flagBad(i); tverdict.textContent = 'Already used that letter'; return; }
+    if (!adj(path[path.length - 1], i)) { flagBad(i); tverdict.textContent = 'Not touching'; return; }
+    lastBad = -1; path.push(i); letter(now(), path.length - 1); paint(); tverdict.textContent = '';
+  });
+  function release() {
+    if (!drawing) return;
+    drawing = false;
+    var w = path.map(function (i) { return LET[i]; }).join(''), key = path.join('-');
+    if (path.length < 3) tverdict.textContent = 'Words need 3 letters or more';
+    else if (found.has(key)) { again(now()); tverdict.textContent = 'Already found'; }
+    else { found.add(key); if (path.length >= 6) { longWord(now()); tverdict.textContent = 'Long word!'; } else { valid(now()); tverdict.textContent = 'Word found'; } }
+    setTimeout(function () { path = []; paint(); tword.textContent = w; }, 250);
+  }
+  gridEl.addEventListener('pointerup', release);
+  gridEl.addEventListener('pointercancel', release);
+
+  // ---------- Buttons ----------
+  var PLAY = {
+    startSeq: startSeq, shake: shake, drop: function (t) { return drop(t); }, count: function (t) { return count(t); },
+    tile: tileDemo, valid: valid, long: longWord, bad: bad, notword: notWord, again: again,
+    overlay: function (t) { return overlay(t, 4); }, end: endSound, final10: final10,
+    swish: swish, sparkle: sparkle, tally: function (t) { return tally(t, 24); }, win: win
+  };
+  function markPicks() {
+    document.querySelectorAll('[data-group]').forEach(function (b) { b.setAttribute('aria-pressed', String(pick[b.getAttribute('data-group')] === b.getAttribute('data-variant'))); });
+    document.getElementById('picks').textContent = Object.keys(GROUPS).map(function (g) { return GROUPS[g] + ': ' + NAMES[pick[g]]; }).join(' · ');
+  }
+  markPicks();
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-play]'); if (!b) return;
+    var key = b.getAttribute('data-play');
+    ac();
+    if (key === 'music') { M.on ? stopMusic() : startMusic(); return; }
+    if (b.hasAttribute('data-group')) { pick[b.getAttribute('data-group')] = b.getAttribute('data-variant'); markPicks(); }
+    var t = ctx.currentTime + 0.05;
+    var d = PLAY[key](t) || 0.6;
+    b.classList.add('playing');
+    setTimeout(function () { b.classList.remove('playing'); }, d * 1000);
+  });
+  document.getElementById('all-start').addEventListener('click', function () { ac(); document.getElementById('h-start').scrollIntoView({ behavior: 'smooth', block: 'start' }); startSeq(ctx.currentTime + 0.3); });
+  document.getElementById('all-results').addEventListener('click', function () { ac(); resultsSeq(ctx.currentTime + 0.05); });
+  document.getElementById('stop').addEventListener('click', function () {
+    stopMusic();
+    timers.forEach(clearTimeout); timers = [];
+    live.forEach(function (s) { try { s.stop(); } catch (err) {} }); live.clear();
+    mini.classList.remove('shake'); drawMini('on'); clockEl.textContent = '0:10';
+    document.querySelectorAll('.playing').forEach(function (el) { el.classList.remove('playing'); });
+  });
+
+  // ---------- Settings ----------
+  function slider(id, key) {
+    var r = document.getElementById('v-' + id), o = document.getElementById('o-' + id);
+    r.addEventListener('input', function () { vol[key] = r.value / 100; o.textContent = r.value; applyVol(); });
+  }
+  slider('music', 'music'); slider('sfx', 'sfx');
+  var mute = document.getElementById('mute');
+  mute.addEventListener('click', function () { vol.mute = !vol.mute; mute.setAttribute('aria-checked', String(vol.mute)); applyVol(); });
+
+  document.getElementById('copy').addEventListener('click', function () {
+    var text = 'My Word Mix sound picks: ' + document.getElementById('picks').textContent;
+    var btn = this;
+    function done(ok) { btn.textContent = ok ? 'Copied' : 'Select and copy the text above'; setTimeout(function () { btn.textContent = 'Copy my picks'; }, 2000); }
+    try {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { selectPicks(); done(false); });
+    } catch (err) { selectPicks(); done(false); }
+  });
+  function selectPicks() { var r = document.createRange(); r.selectNodeContents(document.getElementById('picks')); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); }
+})();
+</script>
