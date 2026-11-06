@@ -540,3 +540,9 @@ h2.title { margin: 0; font-size: 24px; font-weight: 800; }
 .stat-row[hidden] { display: none; }
 .pb-title { color: #FFFFFF; font-size: 22px; font-weight: 800; }
 .seg.scope button { min-height: 44px; }
+
+/* Child tick in pass-and-play, Normal/Easy switch on leaderboards */
+.prow .child-tick { margin-left: auto; min-height: 36px; padding: 0 12px; border-radius: 999px; border: 2px solid var(--card-sh); background: var(--card); color: var(--muted); font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
+.prow .child-tick[aria-pressed="true"] { background: var(--orange); border-color: var(--orange-dk); color: #FFF; }
+.prow .child-tick + .x { margin-left: 8px; }
+.seg.level { margin-bottom: 4px; }
