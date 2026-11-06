@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 23;
+  var APP_VERSION = 24;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   function $(sel, el) { return (el || document).querySelector(sel); }
@@ -39,11 +39,12 @@
 
   // ---------- Storage ----------
   var KEY = 'wordmix.v1';
-  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 8, hint3: true, sound: true, vibrate: true, theme: 'auto' }, boards: {}, shared: {}, daily: {}, deviceId: null, last: { mode: 'classic', size: 4, minLen: 3, partyTime: 180 } };
+  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 8, hint3: true, sound: true, music: true, sfxVol: 0.8, musicVol: 0.6, snd: {}, vibrate: true, theme: 'auto' }, boards: {}, shared: {}, daily: {}, deviceId: null, last: { mode: 'classic', size: 4, minLen: 3, partyTime: 180 } };
   var S;
   try { S = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { S = {}; }
   S = Object.assign({}, DEFAULTS, S);
   S.settings = Object.assign({}, DEFAULTS.settings, S.settings || {});
+  S.settings.snd = Object.assign({}, WMSound.DEFAULT_PICKS, S.settings.snd || {});
   S.last = Object.assign({}, DEFAULTS.last, S.last || {});
   S.daily = S.daily || {};
   // Older saves used a 5-second default; use the new 8-second default unless the player chose a setting.
@@ -80,34 +81,18 @@
   }
 
   // ---------- Sound and haptics ----------
+  // All sounds live in sound.js. These short names are used around the game.
+  WMSound.config(function () { return S.settings; });
   var Snd = {
-    ctx: null,
-    init: function () {
-      if (this.ctx) return;
-      try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { this.ctx = null; }
-    },
-    tone: function (f, dur, type, vol, delay) {
-      if (!S.settings.sound || !this.ctx) return;
-      var c = this.ctx, t = c.currentTime + (delay || 0);
-      var o = c.createOscillator(), g = c.createGain();
-      o.type = type || 'sine'; o.frequency.setValueAtTime(f, t);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol || 0.08, t + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g); g.connect(c.destination);
-      o.start(t); o.stop(t + dur + 0.02);
-    },
-    tick: function (i) { this.tone(420 + Math.min(i, 12) * 45, 0.07, 'triangle', 0.05); },
-    good: function (len) { this.tone(660, 0.14, 'sine', 0.08); this.tone(880, 0.18, 'sine', 0.08, 0.1); if (len >= 6) this.tone(1175, 0.26, 'sine', 0.07, 0.22); },
-    bad: function () { this.tone(190, 0.2, 'square', 0.03); },
-    tally: function () { this.tone(1046, 0.05, 'triangle', 0.035); },
-    cheer: function () { [523, 659, 784, 1046].forEach(function (f, i) { Snd.tone(f, 0.22, 'sine', 0.06, i * 0.11); }); }
+    tone: function (f, dur, type, vol, delay) { WMSound.simple(f, dur, type, vol, delay); },
+    tick: function (i) { WMSound.letter(i); },
+    good: function (len) { WMSound.word(len); },
+    bad: function () { WMSound.notWord(); },
+    tally: function () { WMSound.tallyTick(); },
+    cheer: function () { WMSound.win(); }
   };
   function buzz(ms) { if (S.settings.vibrate && navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} } }
-  document.addEventListener('pointerdown', function () {
-    Snd.init();
-    if (Snd.ctx && Snd.ctx.state === 'suspended') Snd.ctx.resume();
-  }, { capture: true });
+  document.addEventListener('pointerdown', function () { WMSound.unlock(); }, { capture: true });
 
   // ---------- Dictionary and boards ----------
   var WORDS = [], WSET = null;
@@ -659,20 +644,26 @@
   }
 
   // ---------- The game ----------
-  function countdown(parent) {
+  // Round start: the letters shake, the tiles land, then beep, beep, BEEP. full=false plays only the beeps.
+  // Always the same length, so every phone in a Party game starts together.
+  function countdown(parent, o) {
+    o = o || {};
+    var n = o.n || 4;
     return new Promise(function (res) {
-      var o = document.createElement('div');
-      o.className = 'overlay center';
-      o.style.background = 'rgba(242,107,33,.92)';
-      parent.appendChild(o);
-      var n = 3;
-      function step() {
-        if (n === 0) { o.remove(); res(); return; }
-        o.innerHTML = '<div class="countdown" aria-live="assertive">' + n + '</div>';
-        Snd.tone(n === 1 ? 880 : 660, 0.12, 'sine', 0.07);
-        n--; setTimeout(step, 900);
-      }
-      step();
+      var ov = document.createElement('div');
+      ov.className = 'overlay center';
+      ov.style.background = 'var(--orange)';
+      ov.innerHTML = '<div class="deal-wrap"><div class="countdown cd-slot" data-cd aria-live="assertive"></div>' +
+        '<div class="deal shake" style="grid-template-columns:repeat(' + n + ',1fr)">' + new Array(n * n + 1).join('<i></i>') + '</div>' +
+        '<p class="deal-cap" data-cap>Mixing the letters\u2026</p></div>';
+      parent.appendChild(ov);
+      var deal = $('.deal', ov), cd = $('[data-cd]', ov), cap = $('[data-cap]', ov);
+      WMSound.roundStart({
+        full: o.full !== false, tiles: n * n,
+        drop: function (i) { if (i === 0) { deal.classList.remove('shake'); deal.classList.add('dropping'); } var t = deal.children[i]; if (t) t.classList.add('in'); },
+        beat: function (i) { cap.textContent = ''; cd.textContent = i === 2 ? 'Go!' : String(3 - i); cd.classList.remove('cd-pop'); void cd.offsetWidth; cd.classList.add('cd-pop'); buzz(i === 2 ? 40 : 15); },
+        go: function () { ov.style.pointerEvents = 'none'; ov.classList.add('cd-out'); setTimeout(function () { ov.remove(); }, 320); res(); }
+      });
     });
   }
 
@@ -784,7 +775,7 @@
       var W = w.toUpperCase();
       if (w.length < b.minLen) { setMsg('Words need ' + b.minLen + ' or more letters', 'bad', W); Snd.bad(); buzz(30); return; }
       if (!WSET.has(w)) { setMsg('Not in the word list', 'bad', W); Snd.bad(); buzz(30); return; }
-      if (foundSet.has(w)) { setMsg('Already found', 'bad', W); Snd.bad(); buzz(30); return; }
+      if (foundSet.has(w)) { setMsg('Already found', 'bad', W); WMSound.again(); buzz(30); return; }
       foundSet.add(w); found.push(w);
       setMsg(['Nice!', 'Got it!', 'Good one!', 'Yes!', 'Lovely!'][found.length % 5], 'good', W);
       if (cfg.survival) addTime(survivalBonus(w.length));
@@ -806,7 +797,7 @@
       try { boardEl.setPointerCapture(e.pointerId); } catch (err) {}
       var c = cellAt(e, true);
       if (c < 0) return;
-      dragging = true; path = [c]; paint(); Snd.tick(0); buzz(6);
+      dragging = true; path = [c]; badCell = -1; paint(); Snd.tick(0); buzz(6);
     });
     boardEl.addEventListener('pointermove', function (e) {
       if (!dragging) return;
@@ -815,8 +806,10 @@
       var last = path[path.length - 1];
       if (c === last) return;
       if (path.length > 1 && c === path[path.length - 2]) { path.pop(); paint(); Snd.tick(path.length - 1); return; }
-      if (path.indexOf(c) < 0 && adj(last, c)) { path.push(c); paint(); Snd.tick(path.length - 1); buzz(6); }
+      if (path.indexOf(c) < 0 && adj(last, c)) { path.push(c); paint(); Snd.tick(path.length - 1); buzz(6); badCell = -1; }
+      else if (c !== badCell) { badCell = c; WMSound.badMove(); }
     });
+    var badCell = -1;
     function up() { if (!dragging) return; dragging = false; submit(); }
     boardEl.addEventListener('pointerup', up);
     boardEl.addEventListener('pointercancel', up);
@@ -859,9 +852,12 @@
     // Timer and menu. The clock starts once the 3-2-1 countdown is over.
     // `left` counts down by real time; Survival drains faster the longer you last.
     var started = false, paused = false, left = cfg.time * 1000, maxLeft = cfg.time * 1000, lastNow = 0, elapsed = 0;
+    // Music and the ticking play on the phone that runs the round (not on players' phones in Party).
+    var ambient = opts.ambient !== false, lastHalf = -1;
     function start() {
       if (started || ended) return;
       started = true; lastNow = Date.now(); lastTouch = Date.now(); armed = true;
+      if (ambient) WMSound.music.want(true);
     }
     function addTime(secs) {
       left += secs * 1000; maxLeft = Math.max(maxLeft, left);
@@ -884,9 +880,13 @@
         left = Math.max(0, left - dt * speed);
         clockEl.textContent = fmt(left);
         barEl.style.transform = 'scaleX(' + (left / maxLeft) + ')';
-        var secs = Math.ceil(left / 1000);
-        if (secs <= 5 && secs > 0 && secs !== lastBeep) { lastBeep = secs; Snd.tone(1200, 0.06, 'triangle', 0.04); }
-        if (secs > 5) lastBeep = -1;
+        var secs = Math.ceil(left / 1000), half = Math.ceil(left / 500);
+        if (left > 0 && left <= 10000) {
+          if (ambient) WMSound.music.setUrgency(1 - left / 10000);
+          if (half !== lastHalf) { lastHalf = half; if (ambient) WMSound.lastTen(half % 2); }
+        } else if (lastHalf !== -1) { lastHalf = -1; WMSound.music.setUrgency(0); }
+        if (secs <= 3 && secs > 0 && secs !== lastBeep) { lastBeep = secs; WMSound.urgent(3 - secs); }
+        if (secs > 3) lastBeep = -1;
         if (left <= 0) { finish(); return; }
       }
       if (hintGlowUntil && now >= hintGlowUntil) clearHintGlow();
@@ -894,11 +894,11 @@
       var delay = S.settings.hintDelay;
       if (!paused && delay > 0 && armed && !dragging && !hintBtnUntil && !hintPath && now - lastTouch >= delay * 1000) { armed = false; showHintBtn(); }
     }
-    var timer = setInterval(tick, 200);
+    var timer = setInterval(tick, 100);
     tick();
     function pause() {
       if (paused || ended) return;
-      if (!opts.multiplayer) paused = true;
+      if (!opts.multiplayer) { paused = true; WMSound.music.want(false); }
       if (dragging) { dragging = false; path = []; paint(); }
       if (hintBtnUntil) hideHintBtn();
       var o = document.createElement('div');
@@ -908,10 +908,12 @@
         o.innerHTML = '<div class="dialog" role="dialog" aria-modal="true"><h2 class="title">' + (opts.multiplayer ? 'Game menu' : 'Paused') + '</h2>' +
           (opts.multiplayer ? '<p class="hint-text">The clock keeps running in a phone-to-phone game.</p>' : '') +
           '<button class="btn btn-orange" data-resume>Resume</button>' +
+          '<div class="menu-sound">' + soundSwitches() + '</div>' +
           '<button class="btn btn-white" data-hints>' + I.bulb + 'Hint settings</button>' +
           '<button class="btn btn-white" data-quit>' + (opts.multiplayer ? 'Leave game' : 'Quit to home') + '</button></div>';
         $('[data-resume]', o).onclick = function () { o.remove(); resume(); };
         $('[data-hints]', o).onclick = hintMenu;
+        bindSoundSwitches(o, main);
         $('[data-quit]', o).onclick = function () { o.remove(); ended = true; stop(); opts.onQuit ? opts.onQuit() : home(); };
       }
       function hintMenu() {
@@ -925,6 +927,7 @@
     }
     function resume() {
       paused = false; lastNow = Date.now(); lastTouch = Date.now(); armed = true;
+      if (ambient && started && !ended) WMSound.music.want(true);
     }
     $('[data-menu]', el).onclick = pause;
     var fin = $('[data-finish]', el);
@@ -933,6 +936,7 @@
     document.addEventListener('visibilitychange', onVis);
     function stop() {
       clearInterval(timer);
+      if (ambient) WMSound.music.want(false);
       window.removeEventListener('resize', layout);
       document.removeEventListener('visibilitychange', onVis);
     }
@@ -940,14 +944,14 @@
       if (ended) return;
       ended = true; dragging = false; path = []; paint(); stop(); clearHintGlow(); foot.innerHTML = '';
       setMsg(timed ? 'Time’s up!' : 'Round over', 'good');
-      Snd.tone(523, 0.3, 'sine', 0.07); Snd.tone(392, 0.4, 'sine', 0.07, 0.25);
+      if (timed) WMSound.timesUp(); else WMSound.ding();
       buzz(60);
       setTimeout(function () { opts.onEnd({ words: found.slice(), hints: hintsUsed, lasted: elapsed }); }, 1100);
     }
     scr.cleanup = function () { ended = true; stop(); };
     boardEl.addEventListener('pointerdown', function (e) { if (!started) e.stopImmediatePropagation(); }, true);
     var api = { forceEnd: finish, el: el, start: start, isEnded: function () { return ended; } };
-    countdown(el).then(start);
+    countdown(el, { n: n, full: ambient }).then(start);
     return api;
   }
 
@@ -1087,7 +1091,7 @@
       step(gap * 0.4, function () { d = wordEl(x, false); stream.insertBefore(d, stream.firstChild); });
       step(gap * 0.6, function () {
         d.classList.remove('in'); d.classList.add(topSet[x.w] ? 'gold' : 'ok');
-        if (topSet[x.w]) { Snd.tone(1318, 0.12, 'sine', 0.06); Snd.tone(1760, 0.18, 'sine', 0.05, 0.08); } else Snd.tone(660 + Math.min(8, x.p) * 60, 0.08, 'triangle', 0.03);
+        if (topSet[x.w]) WMSound.sparkle(); else WMSound.letter(Math.min(9, x.p + 1));
         var old = shown; shown += x.p;
         animateNum(totalEl, old, shown, 600 / speed);
       });
@@ -1239,24 +1243,30 @@
     var clockEl = $('[data-clock]', el), barEl = $('[data-bar]', el), left = cfg.time * 1000, last = 0, started = false, ended = false;
     function fmt(ms) { var s = Math.ceil(ms / 1000), m = Math.floor(s / 60); s %= 60; return m + ':' + (s < 10 ? '0' : '') + s; }
     clockEl.textContent = fmt(left);
+    var lastHalf = -1, lastBeep = -1;
     var timer = setInterval(function () {
       if (!started || ended) return;
       var now = Date.now(); left = Math.max(0, left - (now - last)); last = now;
       clockEl.textContent = fmt(left); barEl.style.transform = 'scaleX(' + (left / (cfg.time * 1000)) + ')';
-      var s = Math.ceil(left / 1000);
-      if (s <= 5 && s > 0 && s !== timer.beep) { timer.beep = s; Snd.tone(1200, 0.06, 'triangle', 0.04); }
+      var s = Math.ceil(left / 1000), half = Math.ceil(left / 500);
+      if (left > 0 && left <= 10000) {
+        WMSound.music.setUrgency(1 - left / 10000);
+        if (half !== lastHalf) { lastHalf = half; WMSound.lastTen(half % 2); }
+      }
+      if (s <= 3 && s > 0 && s !== lastBeep) { lastBeep = s; WMSound.urgent(3 - s); }
       if (left <= 0) stop(true);
-    }, 200);
+    }, 100);
     function stop(fin) {
       if (ended) return;
       ended = true; clearInterval(timer); window.removeEventListener('resize', layout);
-      if (fin) { Snd.tone(523, 0.3, 'sine', 0.07); Snd.tone(392, 0.4, 'sine', 0.07, 0.25); setTimeout(onEnd, 900); }
+      WMSound.music.want(false);
+      if (fin) { WMSound.timesUp(); setTimeout(onEnd, 900); }
     }
     scr.cleanup = function () { stop(false); };
     $('[data-menu]', el).onclick = function () {
       confirmBox('Close the game for everyone?', 'Close game', 'Keep going').then(function (y) { if (y) { stop(false); onQuit(); } });
     };
-    countdown(el).then(function () { started = true; last = Date.now(); });
+    countdown(el, { n: board.n || cfg.n, full: true }).then(function () { started = true; last = Date.now(); WMSound.music.want(true); });
     return {
       setCount: function (id, c) {
         var e = $('[data-cnt="' + id + '"]', el);
@@ -1399,7 +1409,7 @@
       step(gap * 0.45, function () { d = wordEl(x, false); stream.insertBefore(d, stream.firstChild); });
       step(gap * 0.55, function () {
         d.classList.remove('in'); d.classList.add(x.unique ? 'gold' : 'dup');
-        if (x.unique) { Snd.tone(1318, 0.12, 'sine', 0.06); Snd.tone(1760, 0.18, 'sine', 0.05, 0.08); } else Snd.tone(220, 0.14, 'square', 0.025);
+        if (x.unique) WMSound.sparkle(); else WMSound.swish();
         award(x);
       });
     });
@@ -1521,6 +1531,49 @@
   }
 
   // ---------- Hint controls (settings screen and in-game menu) ----------
+  function soundSwitches() {
+    var st = S.settings;
+    function sw(key, label) { return '<div class="toggle-row"><span id="ms-' + key + '">' + label + '</span><button class="switch" role="switch" aria-labelledby="ms-' + key + '" aria-checked="' + (st[key] !== false) + '" data-stg="' + key + '"></button></div>'; }
+    return sw('sound', 'Sound effects') + sw('music', 'Music');
+  }
+  function bindSoundSwitches(root, rerender) {
+    on(root, '[data-stg]', 'click', function (e) {
+      var k = e.currentTarget.getAttribute('data-stg');
+      S.settings[k] = S.settings[k] === false; save(); WMSound.apply(); rerender();
+    });
+  }
+  function soundSettings() {
+    var st = S.settings;
+    function slider(key, label, val) {
+      return '<div class="vol-row"><label for="vol-' + key + '">' + label + '</label><input type="range" id="vol-' + key + '" min="0" max="100" step="5" value="' + Math.round(val * 100) + '" data-vol="' + key + '"' + '><output for="vol-' + key + '" data-volout="' + key + '">' + Math.round(val * 100) + '</output></div>';
+    }
+    var html = '<div class="card"><b style="font-size:18px">Sound</b>' + soundSwitches() +
+      slider('sfxVol', 'Effects', st.sfxVol == null ? 0.8 : st.sfxVol) + slider('musicVol', 'Music', st.musicVol == null ? 0.6 : st.musicVol) +
+      '<p class="hint-text">Turn Music off to play your own music or a podcast while still hearing the game. You can also switch both from the \u2630 menu during a game.</p></div>' +
+      '<div class="card"><b style="font-size:18px">Choose your sounds</b><p class="hint-text">Tap one to hear it and use it.</p>';
+    Object.keys(WMSound.VARIANTS).forEach(function (g) {
+      html += '<span class="label">' + WMSound.GROUP_NAMES[g] + '</span><div class="seg">' +
+        WMSound.VARIANTS[g].map(function (v) { return '<button data-sndg="' + g + '" data-sndv="' + v[0] + '" aria-pressed="' + (st.snd[g] === v[0]) + '">' + v[1] + '</button>'; }).join('') + '</div>';
+    });
+    return html + '</div>';
+  }
+  function bindSoundSettings(root, rerender) {
+    bindSoundSwitches(root, rerender);
+    on(root, '[data-sndg]', 'click', function (e) {
+      var g = e.currentTarget.getAttribute('data-sndg'), v = e.currentTarget.getAttribute('data-sndv');
+      S.settings.snd[g] = v; save();
+      $$('[data-sndg="' + g + '"]', root).forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-sndv') === v)); });
+      WMSound.preview(g, v);
+    });
+    $$('[data-vol]', root).forEach(function (r) {
+      var k = r.getAttribute('data-vol');
+      r.addEventListener('input', function () { S.settings[k] = r.value / 100; $('[data-volout="' + k + '"]', root).textContent = r.value; WMSound.apply(); });
+      r.addEventListener('change', function () {
+        save();
+        if (k === 'sfxVol') WMSound.valid();
+      });
+    });
+  }
   function hintControls() {
     var st = S.settings;
     var opts = [[5, 'Lots'], [8, 'Sometimes'], [15, 'Rarely'], [25, 'Very little'], [0, 'None']];
@@ -1549,7 +1602,8 @@
         '<div class="card"><b style="font-size:18px">Hints</b>' +
         '<p class="hint-text">A lightbulb pops up above the grid when you haven\u2019t made a move for a while. It stays for 3 seconds. You can also change this from the \u2630 menu during a game.</p>' +
         hintControls() + '</div>' +
-        '<div class="card">' + toggle('sound', 'Sound effects', st.sound) + toggle('vibrate', 'Vibration', st.vibrate) + '</div>' +
+        soundSettings() +
+        '<div class="card">' + toggle('vibrate', 'Vibration', st.vibrate) + '</div>' +
         '<div class="card"><div class="toggle-row"><span id="tl-child">Child profile</span><button class="switch" role="switch" aria-labelledby="tl-child" aria-checked="' + !!S.profile.child + '" data-childp></button></div>' +
         '<p class="hint-text">For younger players. Hints show 3 and 4-letter words, and in Party games your words score double so you can keep up with grown-ups.</p></div>' +
         '<button class="btn btn-white" data-profile>' + I.user + 'Edit my profile</button>' +
@@ -1557,6 +1611,7 @@
         '<p class="hint-text" style="text-align:center">Word list: ' + WORDS.length.toLocaleString() + ' British English words' + (EASY ? ' (' + EASY.size.toLocaleString() + ' everyday words for Easy)' : '') + '.<br>Version ' + APP_VERSION + '</p>';
       bindHintControls(body, render);
       on(body, '[data-theme]', 'click', function (e) { st.theme = e.currentTarget.getAttribute('data-theme'); st.themeChosen = true; save(); applyTheme(); render(); });
+      bindSoundSettings(body, render);
       on(body, '[data-tg]', 'click', function (e) { var k = e.currentTarget.getAttribute('data-tg'); st[k] = !st[k]; save(); render(); if (k === 'vibrate') buzz(20); });
       $('[data-profile]', body).onclick = function () { editMyProfile(function () { settings(back); }); };
       $('[data-childp]', body).onclick = function () { S.profile.child = !S.profile.child; save(); render(); };
@@ -1885,7 +1940,7 @@
         var board = boardFromCells(m.cells, m.n, m.minLen, !!m.easy);
         lastBoard = board;
         game = playBoard({
-          board: board, cfg: cfg, player: S.profile, multiplayer: true,
+          board: board, cfg: cfg, player: S.profile, multiplayer: true, ambient: false,
           onWord: function (n) { send(dc, { t: 'count', n: n }); },
           onEnd: function (r) {
             send(dc, { t: 'done', words: r.words });

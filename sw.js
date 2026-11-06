@@ -1,9 +1,9 @@
 /* Word Mix offline support.
    Online: always fetch the newest game files (so updates show up straight away) and keep a copy.
    Offline: use the saved copy. */
-var VERSION = 'wordmix-v23';
+var VERSION = 'wordmix-v24';
 var SHELL = [
-  './', 'index.html', 'styles.css', 'app.js', 'qr.js', 'avatars.js', 'net.js', 'words.txt', 'words_easy.txt', 'manifest.webmanifest',
+  './', 'index.html', 'styles.css', 'app.js', 'qr.js', 'avatars.js', 'net.js', 'sound.js', 'words.txt', 'words_easy.txt', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-64.png'
 ];
 var EXTRA = [
