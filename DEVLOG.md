@@ -2,7 +2,7 @@
 
 Newest first. Each version commit adds an entry here.
 
-## Version 28: 7 Nov 2026
+## Version 28: 7 Nov 2026 (commit 857b578)
 
 **Why:** the user's other game, Pubby, connects phones with much shorter QR codes. A hotspot test of Word Mix with mobile data off failed; the diagnostics showed the hosting phone was the Word Mix app installed from Chrome (Chrome can't connect over its own phone's hotspot), not Samsung Internet. Pubby worked because it was hosted in Samsung Internet. The shorter codes were still worth bringing over.
 
