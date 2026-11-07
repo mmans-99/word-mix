@@ -2,7 +2,7 @@
 
 Newest first. Each version commit adds an entry here.
 
-## Version 27: 7 Nov 2026
+## Version 27: 7 Nov 2026 (commit d7b14c5)
 
 **Why:** the user wanted Word Mix to look and feel more like Netflix's Boggle Party TV game (own artwork and names, not copies), with a choice between their warm colours and a Boggle-style blue and purple, a livelier results show, and 90-second rounds.
 
