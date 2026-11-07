@@ -4,7 +4,7 @@ Word Mix is a Boggle-style word game for phones, built as an offline web app (PW
 
 - Live game: https://mmans-99.github.io/word-mix/
 - Repo: https://github.com/mmans-99/word-mix (branch `main`, Pages serves the repo root)
-- Current version: **27** (see `APP_VERSION` in `app.js` and `VERSION` in `sw.js`)
+- Current version: **28** (see `APP_VERSION` in `app.js` and `VERSION` in `sw.js`)
 
 ## At the start of every chat
 

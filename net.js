@@ -2,43 +2,82 @@
    No server or internet is needed once the app is installed. */
 (function (root) {
   'use strict';
-  var PREFIX = 'WM1';
+  // Short codes (from Pubby): only the parts the other phone needs (login name, password,
+  // security fingerprint and up to 4 local addresses), about 130 characters instead of ~600.
+  // The other phone rebuilds the full connection message from them.
+  // Format: WM2~o|a~ufrag~pwd~fingerprint(base64url)~addr:port,addr:port
+  var PREFIX = 'WM2';
+  var MAX_ADDRS = 4;
   var JSQR_URL = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
 
-  function slimSdp(sdp) {
-    return sdp.split(/\r?\n/).filter(function (l) {
-      if (!l) return false;
-      if (/^a=candidate:.* tcp /i.test(l)) return false;
-      if (/^a=(extmap|ice-options|msid-semantic)/.test(l)) return false;
-      return true;
-    }).join('\r\n') + '\r\n';
+  function parseCandidate(line) {
+    var p = line.replace(/^a=/, '').replace(/^candidate:/, '').split(' ');
+    if (p.length < 8 || p[6] !== 'typ') return null;
+    return { component: Number(p[1]), protocol: p[2].toLowerCase(), addr: p[4], port: Number(p[5]), type: p[7] };
   }
-  async function compress(str) {
-    var bytes = new TextEncoder().encode(str);
-    if (typeof CompressionStream === 'undefined') return { z: 0, bytes: bytes };
-    var cs = new CompressionStream('deflate-raw');
-    var w = cs.writable.getWriter();
-    w.write(bytes); w.close();
-    return { z: 1, bytes: new Uint8Array(await new Response(cs.readable).arrayBuffer()) };
+  function toB64(bytes) {
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
-  async function decompress(bytes, z) {
-    if (!z) return new TextDecoder().decode(bytes);
-    if (typeof DecompressionStream === 'undefined') throw new Error('This phone cannot read that code. Update the browser and try again.');
-    var ds = new DecompressionStream('deflate-raw');
-    var w = ds.writable.getWriter();
-    w.write(bytes); w.close();
-    return new TextDecoder().decode(await new Response(ds.readable).arrayBuffer());
+  function fromB64(s) {
+    var bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
   }
-  async function pack(desc) {
-    var c = await compress(slimSdp(desc.sdp));
-    return PREFIX + (desc.type === 'offer' ? 'O' : 'A') + c.z + WMQR.b45encode(c.bytes);
+  function pack(desc) {
+    var lines = desc.sdp.split(/\r?\n/);
+    function val(prefix) {
+      for (var i = 0; i < lines.length; i++) if (lines[i].indexOf(prefix) === 0) return lines[i].slice(prefix.length).trim();
+      throw new Error('Could not make a code. Try again.');
+    }
+    var ufrag = val('a=ice-ufrag:'), pwd = val('a=ice-pwd:');
+    var fp = val('a=fingerprint:').split(' ');
+    if (String(fp[0]).toLowerCase() !== 'sha-256' || !fp[1]) throw new Error('Could not make a code. Try again.');
+    var fpBytes = new Uint8Array(fp[1].split(':').map(function (x) { return parseInt(x, 16); }));
+    var seen = {}, addrs = [];
+    lines.forEach(function (l) {
+      if (l.indexOf('a=candidate:') !== 0) return;
+      var c = parseCandidate(l);
+      if (!c || c.protocol !== 'udp' || c.component !== 1 || c.type !== 'host') return;
+      var key = c.addr + ':' + c.port;
+      if (seen[key]) return;
+      seen[key] = 1; addrs.push(c);
+    });
+    // Plain addresses (192.168.x.x) first, then hidden ".local" names, then IPv6.
+    function rank(a) { return /^\d+\.\d+\.\d+\.\d+$/.test(a) ? 0 : /\.local$/.test(a) ? 1 : 2; }
+    addrs.sort(function (a, b) { return rank(a.addr) - rank(b.addr); });
+    var cands = addrs.slice(0, MAX_ADDRS).map(function (c) { return c.addr + ':' + c.port; }).join(',');
+    return [PREFIX, desc.type === 'offer' ? 'o' : 'a', ufrag, pwd, toB64(fpBytes), cands].join('~');
   }
-  async function unpack(code) {
+  function unpack(code) {
     code = String(code || '').replace(/[\r\n\t]/g, '').trim();
-    if (code.indexOf(PREFIX) !== 0 || code.length < 10) throw new Error('That is not a Word Mix code.');
-    var kind = code[3], z = code[4] === '1';
-    var sdp = await decompress(WMQR.b45decode(code.slice(5)), z);
-    return { type: kind === 'O' ? 'offer' : 'answer', sdp: sdp };
+    if (code.indexOf('WM1') === 0) throw new Error('That phone has an older Word Mix. Update both phones (Settings shows the version) and try again.');
+    var parts = code.split('~');
+    if (parts.length !== 6 || parts[0] !== PREFIX || (parts[1] !== 'o' && parts[1] !== 'a')) throw new Error('That is not a Word Mix code.');
+    var fp;
+    try { fp = fromB64(parts[4]); } catch (e) { fp = null; }
+    if (!fp || fp.length !== 32 || !parts[2] || !parts[3]) throw new Error('That code is damaged. Scan it again.');
+    var offer = parts[1] === 'o';
+    var cands = parts[5] ? parts[5].split(',').map(function (c) {
+      var i = c.lastIndexOf(':');
+      return { addr: c.slice(0, i), port: Number(c.slice(i + 1)) };
+    }).filter(function (c) { return c.addr && c.port > 0 && c.port < 65536 && c.port === Math.floor(c.port); }) : [];
+    var hex = Array.prototype.map.call(fp, function (b) { return (b < 16 ? '0' : '') + b.toString(16).toUpperCase(); }).join(':');
+    var sdp = [
+      'v=0', 'o=- 1 2 IN IP4 127.0.0.1', 's=-', 't=0 0',
+      'a=group:BUNDLE 0', 'a=msid-semantic: WMS',
+      'm=application 9 UDP/DTLS/SCTP webrtc-datachannel', 'c=IN IP4 0.0.0.0'
+    ].concat(cands.map(function (c, i) { return 'a=candidate:' + (i + 1) + ' 1 udp ' + (2122260223 - i) + ' ' + c.addr + ' ' + c.port + ' typ host generation 0'; }))
+     .concat([
+      'a=end-of-candidates',
+      'a=ice-ufrag:' + parts[2], 'a=ice-pwd:' + parts[3],
+      'a=fingerprint:sha-256 ' + hex,
+      'a=setup:' + (offer ? 'actpass' : 'active'),
+      'a=mid:0', 'a=sctp-port:5000', 'a=max-message-size:262144'
+    ]).join('\r\n') + '\r\n';
+    return { type: offer ? 'offer' : 'answer', sdp: sdp };
   }
   function waitIce(pc, ms) {
     return new Promise(function (res) {

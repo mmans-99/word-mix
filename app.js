@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 27;
+  var APP_VERSION = 28;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   // No pinch zoom. Android follows the viewport tag; iPhone ignores it, so it is

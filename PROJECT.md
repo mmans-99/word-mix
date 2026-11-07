@@ -86,7 +86,8 @@ Together:
 
 - Connections use WebRTC, set up by scanning QR codes between phones. No server and no internet are needed once the app is installed.
 - The host creates a code, a player scans it with their camera, the player shows their answer code, and the host scans that. Then the next player joins. Up to 8 players.
-- **Hotspot play:** works in Samsung Internet. Chrome on Android can't play over its own phone's hotspot, so use Samsung Internet. A warning shows on screens with no network.
+- **Hotspot play:** works in Samsung Internet. Chrome on Android can't play over its own phone's hotspot, so use Samsung Internet. The hotspot phone's Word Mix icon must be installed from Samsung Internet; an icon installed from Chrome opens in Chrome (Settings → connection diagnostics show the browser).
+- **Short codes (v28):** the QR codes hold only what the other phone needs (about 130 characters), the same format as the user's Pubby game. Every phone must be on the same version to connect. A warning shows on screens with no network.
 - **Big-screen host mode:** the host device doesn't play. It shows the live "words found so far" for each player and the results for everyone to watch.
 - The host decides everything: it makes the board, starts the rounds and works out the scores. A phone that rejoins replaces its old connection.
 - The screen stays awake during play and setup.

@@ -8,6 +8,7 @@ Remember: plan first, and no code until the user says to write it (see `CLAUDE.m
 - [ ] **Board choosing speed on phones:** boards now take about 60–100ms to choose on a computer, maybe up to about 0.5s on an older phone. If starting a round feels slow, reduce the number of boards tried in `makeBoard`.
 - [ ] **Try version 27 on real phones and the TV:** both colour schemes, the results show (lit paths, split meter, place colours, labels riding on the bars, personal bests, highlights) and 90-second rounds.
 - [ ] **Offline font:** Montserrat (like Bricolage) loads from Google Fonts, so a phone that has never been online shows a plain bold font. Bundle the font files if that matters.
+- [ ] **Try version 28 over a hotspot with data off:** host in Samsung Internet (reinstall the icon from Samsung Internet if the diagnostics say Chrome), join with an iPhone.
 - [ ] **Child hint sizes:** when the child is well behind, hints lean to the longest size anyone has found, which can be an 8 or 9-letter word. Check this feels right, or cap the size (for example at 6 letters).
 
 ## Small tidy-ups (suggested, not agreed)
@@ -30,6 +31,8 @@ Remember: plan first, and no code until the user says to write it (see `CLAUDE.m
 - [ ] **Android app with a local server, plus the iOS web app,** working together seamlessly.
 
 ## Done (recent)
+
+- [x] v28: short connection codes from Pubby (about 130 characters instead of about 590).
 
 - [x] v27: Warm and Party colour schemes, chunky look, 3D countdown with settings badges, results show upgrades (lit paths, split meter, place-coloured bars, labels on bars, reactions, personal bests, highlights, TV layout), aqua swiping in Party, 90-second rounds.
 - [x] v26: host-controlled Party results, bar battle, crown and poop labels, session trivia, loading screen between rounds, child hints in Party and pass-and-play.

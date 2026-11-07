@@ -2,6 +2,16 @@
 
 Newest first. Each version commit adds an entry here.
 
+## Version 28: 7 Nov 2026
+
+**Why:** the user's other game, Pubby, connects phones with much shorter QR codes. A hotspot test of Word Mix with mobile data off failed; the diagnostics showed the hosting phone was the Word Mix app installed from Chrome (Chrome can't connect over its own phone's hotspot), not Samsung Internet. Pubby worked because it was hosted in Samsung Internet. The shorter codes were still worth bringing over.
+
+**Changes:**
+- **Short connection codes (from Pubby):** codes now carry only the login name, password, security fingerprint and up to 4 local addresses (UDP host addresses, plain IPv4 first, then hidden ".local" names, then IPv6). About 130 characters instead of about 590, so the QR has fewer, bigger squares and scans faster. The receiving phone rebuilds the full connection message. Format `WM2~o|a~ufrag~pwd~fingerprint~addr:port,...` in `net.js` (`pack`/`unpack`). No compression or Base45 needed any more.
+- Scanning an old-format code (`WM1`) says the other phone has an older Word Mix and both should update. Old and new versions can't connect to each other.
+- The camera scanner is unchanged (built-in reader where the browser has one, jsQR on iPhones).
+- Tests: all pass, including the 3-phone Party test with the new codes. A new code drawn as a QR reads back correctly.
+
 ## Version 27: 7 Nov 2026 (commit d7b14c5)
 
 **Why:** the user wanted Word Mix to look and feel more like Netflix's Boggle Party TV game (own artwork and names, not copies), with a choice between their warm colours and a Boggle-style blue and purple, a livelier results show, and 90-second rounds.

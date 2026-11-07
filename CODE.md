@@ -9,7 +9,7 @@ Plain HTML, CSS and JavaScript, with no build step and no framework. All code is
 | `index.html` | The page shell. Viewport meta (no pinch zoom), fonts, and loads `qr.js`, `avatars.js`, `net.js`, `sound.js`, then `app.js`. |
 | `app.js` | The whole game (~2,000 lines): boards, screens, play, results, leaderboards, settings, Party. |
 | `sound.js` | `WMSound`: all sound effects and music, made with Web Audio. |
-| `net.js` | `WMNet`: WebRTC phone-to-phone connections, with the connection codes packed into QR codes. Loads jsQR from jsDelivr for scanning. |
+| `net.js` | `WMNet`: WebRTC phone-to-phone connections, with the connection codes packed into QR codes. Codes are short (`WM2~o|a~ufrag~pwd~fingerprint~addrs`, about 130 characters, Pubby's format): `pack` keeps up to 4 UDP host addresses, `unpack` rebuilds a minimal data-channel SDP (mid 0, setup actpass/active). Loads jsQR from jsDelivr for scanning. |
 | `qr.js` | Makes the QR code images. |
 | `avatars.js` | The avatar drawings (fox, panda…). `WMAvatars.svg(id, size, mood)`: mood `'love'` (heart eyes) or `'happy'` (smiling eyes), drawn over the eyes using the `EYES` table. |
 | `styles.css` | All styles. Theme colours are CSS variables. v27 adds `:root[data-scheme="party"]` (and `[data-theme="dark"]`) overrides and variables `--line`, `--lw`, `--grad-top/bot`, `--show-top/bot`, `--band-bg`, `--btn-bg/ink`, `--btn2-bg/ink`, `--sel-ink`, `--tile-line`, `--cd-fill/side`, `--meter`, `--bar-none/rest`, `--font-display`. The v27 blocks are at the end. |
@@ -123,7 +123,8 @@ shared {id: entry}, sharedInit, daily {...}, last {mode, size, minLen, partyTime
 - **Curly quotes in source:** some strings in `app.js` use real `’`, `…` and `—` characters. When editing, match them exactly, or the edit fails to apply.
 - **Version bump:** if `sw.js` `VERSION` isn't bumped, phones keep the old cached files.
 - **Samsung Internet dark mode** repaints colours. The Original theme is protected against this; don't remove that styling.
-- **Chrome on Android** can't do WebRTC over its own phone's hotspot. Samsung Internet can.
+- **Chrome on Android** can't do WebRTC over its own phone's hotspot. Samsung Internet can. A home-screen icon installed from Chrome runs in Chrome even if Samsung Internet is the usual browser.
+- **Connection codes:** changing the code format (`PREFIX` in `net.js`) stops old and new versions connecting. `WMQR.b45encode/b45decode` are no longer used by `net.js`.
 - **iPhone** ignores `user-scalable=no`, so pinch zoom is blocked with `gesturestart` and two-finger `touchmove` listeners at the top of `app.js`. Double-tap zoom is turned off with `touch-action: manipulation` on `html, body`. The board itself has `touch-action: none`.
 - **iPhone silent switch** mutes Web Audio.
 - **Board generation time:** about 60–100ms per board on a computer, possibly up to about 0.5s on an older phone.
