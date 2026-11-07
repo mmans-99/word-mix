@@ -11,8 +11,8 @@ Plain HTML, CSS and JavaScript, with no build step and no framework. All code is
 | `sound.js` | `WMSound`: all sound effects and music, made with Web Audio. |
 | `net.js` | `WMNet`: WebRTC phone-to-phone connections, with the connection codes packed into QR codes. Loads jsQR from jsDelivr for scanning. |
 | `qr.js` | Makes the QR code images. |
-| `avatars.js` | The avatar drawings (fox, panda…). |
-| `styles.css` | All styles. Theme colours are CSS variables. |
+| `avatars.js` | The avatar drawings (fox, panda…). `WMAvatars.svg(id, size, mood)`: mood `'love'` (heart eyes) or `'happy'` (smiling eyes), drawn over the eyes using the `EYES` table. |
+| `styles.css` | All styles. Theme colours are CSS variables. v27 adds `:root[data-scheme="party"]` (and `[data-theme="dark"]`) overrides and variables `--line`, `--lw`, `--grad-top/bot`, `--show-top/bot`, `--band-bg`, `--btn-bg/ink`, `--btn2-bg/ink`, `--sel-ink`, `--tile-line`, `--cd-fill/side`, `--meter`, `--bar-none/rest`, `--font-display`. The v27 blocks are at the end. |
 | `sw.js` | Service worker for offline play. |
 | `manifest.webmanifest`, `icons/` | Install-to-home-screen details and icons. |
 | `words.txt` | Full dictionary, 70,444 words, sorted, one per line, lower case, British spellings. |
@@ -22,7 +22,7 @@ Plain HTML, CSS and JavaScript, with no build step and no framework. All code is
 ## app.js sections (in order)
 
 1. **Helpers:** `$`, `$$`, `esc`, `on`, `wait`, `todayKey`, `hashStr`, `rng(seed)` (a seeded random generator), the pinch-zoom block, and scoring: `pts(len)`, `LETTER_VALUE`, `rarityPts`, `scoreOf(w, scoring)`.
-2. **Storage:** everything is in `localStorage` under `'wordmix.v1'` (the `S` object). `DEFAULTS`, `save()`, `applyTheme()`, `rememberPlayer()`. Definitions are cached separately under `'wordmix.defs'`.
+2. **Storage:** everything is in `localStorage` under `'wordmix.v1'` (the `S` object). `DEFAULTS`, `save()`, `applyTheme()` (sets `data-theme` and `data-scheme`), `rememberPlayer()`. The one-time `S.last.t90` move sets Classic and Party to 90 seconds. Definitions are cached separately under `'wordmix.defs'`.
 3. **Sound and haptics:** `Snd` is a thin wrapper around `WMSound`. `buzz(ms)` vibrates.
 4. **Dictionary and boards:**
    - `loadWords()` fetches `words.txt` and `words_easy.txt`. In the preview build they're inlined as `#wm-words` and `#wm-easy`.
@@ -33,7 +33,7 @@ Plain HTML, CSS and JavaScript, with no build step and no framework. All code is
    - `countFindable(words)`: everyday words count 1, everyday words of 5+ letters count 3.
    - `makeBoard(n, minLen, seed, easy)` tries `attempts` boards (Normal: 60/40/25 for 4/5/6; Easy: 80/50/25) and keeps the one with the highest `countFindable`. It returns `{n, minLen, cells, words, easy}`. Cells are lower-case letters, with `'qu'` for the Qu tile.
    - `boardFromCells(...)` rebuilds a board from the cells sent by a Party host.
-5. **Modes:** `MODES`, `SURVIVAL_START`, `survivalBonus(len)`.
+5. **Modes:** `MODES` (v27 adds `classic90`: Classic at 90 seconds, its own leaderboard key `classic90:n`), `SURVIVAL_START`, `survivalBonus(len)`.
 6. **Leaderboards (data):**
    - `boardKey(mode, n, easy)` gives `"mode:n"`, `"mode:n:e"` for Easy, or `"daily:YYYY-MM-DD"`.
    - `S.boards` holds this phone's scores. `S.shared` is an id-keyed map of everyone's scores. Every score has an `id` so it's never counted twice.
@@ -41,7 +41,7 @@ Plain HTML, CSS and JavaScript, with no build step and no framework. All code is
    - Limits: 20 per board on this phone, `SHARED_PER_BOARD = 25`.
 7. **Word definitions:** `lookup(w)` tries `baseForms(w)` against `https://api.dictionaryapi.dev/api/v2/entries/en/`, cached. `showDefinition` opens the sheet.
 8. **Keep awake:** `keepAwake()` uses a Wake Lock during play and nearby setup.
-9. **Screen management:** `mount(html, cls)` swaps screens with animation (`.screen`, `.leaving`) and runs `scr.cleanup`. Also `toast`, `logo`, `backBand`, `avatar`, `confirmBox`.
+9. **Screen management:** `mount(html, cls)` swaps screens with animation (`.screen`, `.leaving`) and runs `scr.cleanup`. Also `toast`, `logo`, `backBand`, `avatar(id, size, mood)`, `confirmBox`, `cfgBadges(cfg, n, minLen, easy)` (round settings badges) and `rulesCard(scoring, together)`.
 10. **Profile and Home:** `profileEditor`, `editMyProfile`, `home()`, `party()` (the Together menu).
 11. **Game setup:** `setup(kind)` with kind `'solo'`, `'pass'` or `'host'`. It covers the mode, size, min length, Normal | Easy switch (`data-easy`), party time and scoring. The choices are remembered in `S.last`. `finalCfg(cfg)`, `startDaily()`, and `addPlayerSheet()` (pass-and-play players, with the Child tick).
 12. **The game:**
@@ -58,7 +58,8 @@ Plain HTML, CSS and JavaScript, with no build step and no framework. All code is
 15. **Pass and play:** `playPass(cfg, players, session)`. A child player's `childHints` uses the longest word and average score of the players who went before; results pass `hinted` through to `resultsShow` (role `'local'`).
 16. **Party results:** `computeRound(players, scoring)` (counts, unique set, finders, rows), `roundLabels(rows)` (winner and loser keys), `updateSession(session, rows, scoring)` (per-player session facts and `session.labels`), `standings`, `triviaLines(session)` (`[{h, b, av}]`), `triviaCard(lines)` (cycles every 4s), `cleanTrivia` / `cleanLabels` (check host data) and `roundLoading(round, players, labels, lines, ms)` (the between-rounds screen, `NEXT_WAIT` = 5000ms).
 17. **Big screen:** `spectate(board, cfg, players, roundNo, onEnd, onQuit)` shows live counts, uses the same countdown, and plays music.
-18. **Animated results:** `animateNum`, `confetti`, `BAR_COLS`, `resultsShow(cfg, players, opts)`, the bar battle:
+18. **Animated results:** `animateNum`, `confetti`, `roundHighlights(R, board)` (with `LONG_CAPS`), `miniBoard`, `highlightCard`, `ordinal`, `resultsShow(cfg, players, opts)`, the bar battle:
+    - v27: `pbs` (personal bests, worked out before the scores are saved), `lightPath(x)` (board `[data-rvt]` tiles), `countUp(x)` (split meter: `[data-fills]` shared, `[data-fillu]` gold), `plusPop`, `setMood`, `drawBars` sets `[data-place]` text and the bar's `data-rank` (1–4, colour by place), `podium(animated)` (class `.final`, PB chips), `positionBadges()` (labels measured to sit on each score, rechecked after 600ms), `liveLab()` / `followLeaders()` (round 2 on, labels follow first and last during the count), `moveLabels(target, animated, quiet)`. The screen has class `show-screen` (results gradient).
     - `opts.role` is `'local'` (pass-and-play), `'host'` or `'follow'` (Party player phones). The reveal is a list of `steps`. Local and host run them on timers, and the host calls `opts.onStep(i)`, `onSpeed(s)` and `onSkip()` to broadcast. Followers run steps only through `api.goTo(i)`, with `api.setSpeed` and `api.skip`. A follower that hears nothing for 6 seconds switches to local (`guard`).
     - Each word has two steps: `popWord` (above the bars) and `flyWord` (`.fly-chip` elements on `document.body`, Web Animations, then the bar rises via `drawBars`). `flyGen` stops chips scoring after a skip.
     - Labels: `.lbadge` elements in `[data-labels]`, positioned by column. They start on `prev` holders and `moveLabels` moves, bounces, drops or removes them.
@@ -128,4 +129,6 @@ shared {id: entry}, sharedInit, daily {...}, last {mode, size, minLen, partyTime
 - **Board generation time:** about 60–100ms per board on a computer, possibly up to about 0.5s on an older phone.
 - Old `.deal` / `.deal-wrap` styles from the v24 overlay countdown are unused since v25 (see `TODO.md`).
 - `.badge` is an older class (personal-best badge). The results labels use `.lbadge`.
+- In the results, `[data-place="i"]` is the place text inside bar `i`; the bar's own place colour is `data-rank`. Don't mix them up (they clashed once).
+- The preview can't be published over an artifact made in another session when the session has no network; publish a new one.
 - The child Hint button (`.hint-btn.kid`) only appears when `playBoard` gets `opts.childHints` (pass-and-play and Party) and the player is a child. Solo hints are unchanged.

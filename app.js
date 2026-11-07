@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = 26;
+  var APP_VERSION = 27;
   // ---------- Helpers ----------
   var app = document.getElementById('app');
   // No pinch zoom. Android follows the viewport tag; iPhone ignores it, so it is
@@ -46,7 +46,7 @@
 
   // ---------- Storage ----------
   var KEY = 'wordmix.v1';
-  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 8, hint3: true, sound: true, music: true, sfxVol: 0.8, musicVol: 0.6, snd: {}, vibrate: true, theme: 'auto' }, boards: {}, shared: {}, daily: {}, deviceId: null, last: { mode: 'classic', size: 4, minLen: 3, partyTime: 180 } };
+  var DEFAULTS = { profile: null, saved: [], settings: { hintDelay: 8, hint3: true, sound: true, music: true, sfxVol: 0.8, musicVol: 0.6, snd: {}, vibrate: true, theme: 'auto', scheme: 'warm' }, boards: {}, shared: {}, daily: {}, deviceId: null, last: { mode: 'classic90', size: 4, minLen: 3, partyTime: 90 } };
   var S;
   try { S = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { S = {}; }
   S = Object.assign({}, DEFAULTS, S);
@@ -54,6 +54,8 @@
   S.settings.snd = Object.assign({}, WMSound.DEFAULT_PICKS, S.settings.snd || {});
   S.last = Object.assign({}, DEFAULTS.last, S.last || {});
   S.daily = S.daily || {};
+  // v27: 90-second rounds become the default for Classic and Party (once, for existing players).
+  if (!S.last.t90) { if (S.last.mode === 'classic') S.last.mode = 'classic90'; S.last.partyTime = 90; S.last.t90 = true; }
   // Older saves used a 5-second default; use the new 8-second default unless the player chose a setting.
   if (!S.settings.hintChosen && S.settings.hintDelay === 5) S.settings.hintDelay = 8;
   if (!S.deviceId) S.deviceId = Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -65,9 +67,11 @@
   function applyTheme() {
     var t = S.settings.theme;
     var dark = t === 'dark' || (t === 'auto' && darkQuery && darkQuery.matches);
+    var party = S.settings.scheme === 'party';
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-scheme', party ? 'party' : 'warm');
     var m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute('content', dark ? '#E2621C' : '#F26B21');
+    if (m) m.setAttribute('content', party ? (dark ? '#1C1450' : '#4B2BB8') : (dark ? '#E2621C' : '#F26B21'));
     // Always tell the browser this page handles light and dark itself. Browsers with their own
     // dark mode (Samsung Internet, Chrome's auto-dark) only repaint pages that say they're light-only,
     // so this keeps the Original colours exactly as drawn even when the browser is in dark mode.
@@ -219,7 +223,8 @@
 
   // ---------- Modes ----------
   var MODES = {
-    classic: { name: 'Classic', time: 180, desc: '3 minutes' },
+    classic: { name: 'Classic', time: 180, desc: '90 seconds or 3 minutes' },
+    classic90: { name: 'Classic', time: 90, desc: '90 seconds or 3 minutes' },
     blitz: { name: 'Blitz', time: 60, desc: '1 minute, go fast' },
     survival: { name: 'Survival', time: 60, desc: 'Words add time to a shrinking clock' },
     rarity: { name: 'Rarity', time: 180, desc: 'Rare letters like Q, Z and X score big' },
@@ -279,7 +284,7 @@
     var added = 0;
     (Array.isArray(entries) ? entries : []).slice(0, 2000).forEach(function (e) {
       if (!e || typeof e.id !== 'string' || typeof e.b !== 'string' || S.shared[e.id]) return;
-      if (!/^(classic|blitz|survival|rarity|party):[456](:e)?$|^daily:\d{4}-\d\d-\d\d$/.test(e.b)) return;
+      if (!/^(classic|classic90|blitz|survival|rarity|party):[456](:e)?$|^daily:\d{4}-\d\d-\d\d$/.test(e.b)) return;
       var score = Math.max(0, Math.min(100000, Math.round(+e.score || 0)));
       S.shared[e.id.slice(0, 80)] = { id: e.id.slice(0, 80), b: e.b, key: String(e.key || '').slice(0, 60), name: String(e.name || 'Player').slice(0, 14), avatar: String(e.avatar || 'fox').slice(0, 20),
         score: score, words: Math.max(0, Math.round(+e.words || 0)), minLen: +e.minLen === 4 ? 4 : 3, at: +e.at || Date.now() };
@@ -441,7 +446,31 @@
   function backBand(title, extra) {
     return '<header class="band"><div class="band-row"><button class="icon-btn" data-back aria-label="Back">' + I.back + '</button><h1>' + esc(title) + '</h1><div style="width:44px;display:flex;justify-content:flex-end">' + (extra || '') + '</div></div></header>';
   }
-  function avatar(id, size) { return WMAvatars.svg(id, size); }
+  function avatar(id, size, mood) { return WMAvatars.svg(id, size, mood); }
+  // Round settings shown as badges during the countdown: board size, time, shortest word, Easy, Rarity.
+  var BADGE_IC = {
+    grid: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" fill="currentColor" opacity=".18"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18" stroke="currentColor" stroke-width="2"/><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>',
+    time: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12M6 21h12M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9s10 4 10 9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+    len: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="6" height="10" rx="2" fill="currentColor"/><rect x="9" y="7" width="6" height="10" rx="2" fill="currentColor" opacity=".7"/><rect x="16" y="7" width="6" height="10" rx="2" fill="currentColor" opacity=".45"/></svg>',
+    gem: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12l4 6-10 11L2 10z" fill="currentColor" opacity=".25" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>'
+  };
+  function cfgBadges(cfg, n, minLen, easy) {
+    var t = +cfg.time || 0;
+    var tl = cfg.mode === 'survival' ? 'Survival' : !t ? 'No timer' : t <= 90 ? t + 's' : (t % 60 ? Math.floor(t / 60) + ':' + (t % 60 < 10 ? '0' : '') + (t % 60) : (t / 60) + ' min');
+    return '<span class="cfg-badges">' +
+      '<span class="cfg-b">' + BADGE_IC.grid + n + '×' + n + '</span>' +
+      '<span class="cfg-b">' + BADGE_IC.time + tl + '</span>' +
+      '<span class="cfg-b">' + BADGE_IC.len + (minLen || 3) + '+ letters</span>' +
+      (easy ? '<span class="cfg-b easy">Easy</span>' : '') +
+      (cfg.scoring === 'rarity' ? '<span class="cfg-b">' + BADGE_IC.gem + 'Rarity</span>' : '') + '</span>';
+  }
+  // How a round is scored, for the big screen and the results.
+  function rulesCard(scoring, together) {
+    var rows = scoring === 'rarity'
+      ? '<div class="rr"><span>Each letter has a value</span><b>E = 1 · Z = 10</b></div>'
+      : '<div class="rr"><span>3-letter words</span><b>1 point</b></div><div class="rr"><span>Every extra letter</span><b>+1 point</b></div>';
+    return '<div class="rules-card">' + rows + (together ? '<div class="rr x2"><span>Words only you found</span><b>Double ×2</b></div>' : '') + '</div>';
+  }
   function confirmBox(text, yes, no) {
     return new Promise(function (res) {
       var o = document.createElement('div');
@@ -539,7 +568,7 @@
   var MAX_PLAYERS = 8;
   function setup(kind) {
     var isParty = kind !== 'solo';
-    var cfg = { mode: isParty ? 'party' : (['classic', 'blitz', 'survival', 'rarity', 'zen'].indexOf(S.last.mode) >= 0 ? S.last.mode : 'classic'), size: S.last.size, minLen: S.last.minLen, partyTime: S.last.partyTime || 180, scoring: S.last.scoring || 'length', easy: !!S.last.easy };
+    var cfg = { mode: isParty ? 'party' : (['classic', 'classic90', 'blitz', 'survival', 'rarity', 'zen'].indexOf(S.last.mode) >= 0 ? S.last.mode : 'classic90'), size: S.last.size, minLen: S.last.minLen, partyTime: S.last.partyTime || 90, scoring: S.last.scoring || 'length', easy: !!S.last.easy };
     var players = kind === 'pass' ? (setup.players || [S.profile]) : null;
     if (kind === 'pass') setup.players = players;
     var titles = { solo: 'Play solo', pass: 'Pass and play', host: 'Host a game' };
@@ -550,12 +579,15 @@
       var html = '';
       if (!isParty) {
         html += '<span class="label">Mode</span><div class="modes">' +
-          ['classic', 'blitz', 'survival', 'rarity', 'zen'].map(function (m) { return '<button class="mode" data-mode="' + m + '" aria-pressed="' + (cfg.mode === m) + '"><b>' + MODES[m].name + '</b><small>' + MODES[m].desc + '</small></button>'; }).join('') + '</div>';
+          ['classic', 'blitz', 'survival', 'rarity', 'zen'].map(function (m) { return '<button class="mode" data-mode="' + m + '" aria-pressed="' + (cfg.mode === m || (m === 'classic' && cfg.mode === 'classic90')) + '"><b>' + MODES[m].name + '</b><small>' + MODES[m].desc + '</small></button>'; }).join('') + '</div>';
+        if (cfg.mode === 'classic' || cfg.mode === 'classic90') html += '<span class="label">Round length</span><div class="seg">' +
+          '<button data-ctime="classic90" aria-pressed="' + (cfg.mode === 'classic90') + '">90 seconds</button><button data-ctime="classic" aria-pressed="' + (cfg.mode === 'classic') + '">3 minutes</button></div>' +
+          '<p class="hint-text">90-second and 3-minute games have their own leaderboards.</p>';
         if (cfg.mode === 'rarity') html += '<p class="hint-text">3 minutes. Each letter has a value: common ones like E, A and S are 1 point, rarer ones more, up to 10 for Q and Z. A word scores the total of its letters.</p>';
         if (cfg.mode === 'survival') html += '<p class="hint-text">Start with 1 minute. Every word adds time: 3 letters +3s, 4 letters +5s, 5 letters +7s, and more for longer words. The clock speeds up as you go.</p>';
       } else {
         html += '<span class="label">Round length</span><div class="seg">' +
-          [[60, '1 min'], [120, '2 min'], [180, '3 min']].map(function (t) { return '<button data-ptime="' + t[0] + '" aria-pressed="' + (cfg.partyTime === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>' +
+          [[60, '1 min'], [90, '90s'], [120, '2 min'], [180, '3 min']].map(function (t) { return '<button data-ptime="' + t[0] + '" aria-pressed="' + (cfg.partyTime === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>' +
           '<span class="label">Scoring</span><div class="seg">' +
           '<button data-scoring="length" aria-pressed="' + (cfg.scoring !== 'rarity') + '">By length</button><button data-scoring="rarity" aria-pressed="' + (cfg.scoring === 'rarity') + '">By rarity</button></div>' +
           '<p class="hint-text">' + (cfg.scoring === 'rarity' ? 'Words score the value of their letters: E, A, S are 1 point, Q and Z are 10.' : '3 letters 1 point, 4 letters 2, 5 letters 3, then 1 more per extra letter.') + ' Words only you found score double.</p>';
@@ -585,7 +617,8 @@
       if (kind === 'pass' && !ready) html += '<p class="hint-text" style="text-align:center">Add at least one more player.</p>';
       var body = $('[data-body]', el);
       body.innerHTML = html;
-      on(body, '[data-mode]', 'click', function (e) { cfg.mode = e.currentTarget.getAttribute('data-mode'); render(); });
+      on(body, '[data-mode]', 'click', function (e) { var m = e.currentTarget.getAttribute('data-mode'); if (m !== 'classic' || cfg.mode !== 'classic90') cfg.mode = m === 'classic' ? 'classic90' : m; render(); });
+      on(body, '[data-ctime]', 'click', function (e) { cfg.mode = e.currentTarget.getAttribute('data-ctime'); render(); });
       on(body, '[data-ptime]', 'click', function (e) { cfg.partyTime = +e.currentTarget.getAttribute('data-ptime'); render(); });
       on(body, '[data-screen]', 'click', function (e) { cfg.screenOnly = e.currentTarget.getAttribute('data-screen') === '1'; render(); });
       on(body, '[data-scoring]', 'click', function (e) { cfg.scoring = e.currentTarget.getAttribute('data-scoring'); render(); });
@@ -602,7 +635,7 @@
       on(body, '[data-rm]', 'click', function (e) { players.splice(+e.currentTarget.getAttribute('data-rm'), 1); render(); });
       on(body, '[data-add]', 'click', function () { addPlayerSheet(players, render); });
       $('[data-start]', body).onclick = function () {
-        S.last = { mode: isParty ? S.last.mode : cfg.mode, size: cfg.size, minLen: cfg.minLen, partyTime: cfg.partyTime, scoring: cfg.scoring, easy: !!cfg.easy }; save();
+        S.last = { mode: isParty ? S.last.mode : cfg.mode, size: cfg.size, minLen: cfg.minLen, partyTime: cfg.partyTime, scoring: cfg.scoring, easy: !!cfg.easy, t90: true }; save();
         var c = finalCfg(cfg);
         if (kind === 'solo') playSolo(c);
         else if (kind === 'pass') { setup.players = players; playPass(c, players); }
@@ -616,7 +649,7 @@
     return {
       mode: cfg.mode, n: cfg.size, minLen: cfg.minLen, seed: null,
       scoring: cfg.mode === 'rarity' ? 'rarity' : cfg.mode === 'party' ? (cfg.scoring || 'length') : 'length',
-      time: cfg.mode === 'party' ? (cfg.partyTime || 180) : MODES[cfg.mode].time,
+      time: cfg.mode === 'party' ? (cfg.partyTime || 90) : MODES[cfg.mode].time,
       survival: cfg.mode === 'survival',
       easy: !!cfg.easy,
       screenOnly: !!cfg.screenOnly
@@ -726,7 +759,7 @@
       '<div style="display:flex;gap:10px">' +
       (timed ? '<div class="stat"><span class="clock" data-clock>0:00</span><div class="bar"><i data-bar></i></div></div>' : '<div class="stat"><span class="clock">Zen</span><span style="font-weight:700;color:var(--muted);font-size:14px">No timer</span></div>') +
       '<div class="count" data-count><b>0</b><small>words</small></div></div></header>' +
-      '<div class="wordbar"><div class="w placeholder" data-word>Get ready\u2026</div><div class="m" data-msg aria-live="polite">Letters are mixing</div></div>' +
+      '<div class="wordbar"><div class="w placeholder" data-word>Get ready\u2026</div><div class="m" data-msg aria-live="polite">' + cfgBadges(cfg, n, b.minLen, b.easy) + '</div></div>' +
       '<div class="board-wrap" data-wrap><div class="hint-row" data-foot></div><div class="board-panel"><div class="board" data-board style="--n:' + n + '"></div></div></div>' +
       '<div class="game-foot"></div>'
     , 'game');
@@ -1448,8 +1481,8 @@
     var scr = mount(
       '<header class="band game-band"><div class="band-row"><b style="color:#FFF;font-size:20px;font-weight:800">Round ' + roundNo + ' · Big screen</b>' +
       '<button class="icon-btn" data-menu aria-label="Game menu">' + I.menu + '</button></div>' +
-      '<div style="display:flex;gap:10px"><div class="stat"><span class="clock" data-clock>0:00</span><div class="bar"><i data-bar></i></div></div></div></header>' +
-      '<section class="spect-players"><span class="label">Words found so far</span><div class="players">' +
+      '<div style="display:flex;gap:10px"><div class="stat"><span class="clock" data-clock>0:00</span><div class="bar"><i data-bar></i></div></div></div>' + cfgBadges(cfg, n, board.minLen, board.easy) + '</header>' +
+      '<section class="spect-players">' + rulesCard(cfg.scoring, true) + '<span class="label">Words found so far</span><div class="players">' +
       players.map(function (p) { return '<div class="prow">' + avatar(p.avatar, 44) + '<b>' + esc(p.name) + '</b><span class="sc" data-cnt="' + esc(p.id) + '">0</span></div>'; }).join('') +
       '</div></section>' +
       '<div class="board-wrap" data-wrap><div class="board-panel"><div class="board" data-board style="--n:' + n + '"></div></div></div>', 'game spect');
@@ -1542,8 +1575,69 @@
     requestAnimationFrame(frame);
   }
 
-  // Bar colours for players in the results battle.
-  var BAR_COLS = ['#F26B21', '#2F6FDE', '#4E9A32', '#E0457A', '#E3A21A', '#8E5BB5', '#1A9A8E', '#A8542A'];
+  // Bars in the results battle are coloured by place (see .bbar[data-place] in styles.css).
+
+  // Round highlights: fun facts about this round only, worked out the same way on every phone.
+  var LONG_CAPS = [
+    '{W}: {n} letters. The board did not see that coming.',
+    'Nobody panic, but someone just found {W}.',
+    '{W}! Somebody has been reading the dictionary for fun.',
+    '{n} letters of pure showing off: {W}.',
+    'The tiles are still recovering from {W}.',
+    '{W}. Frame it and stick it on the fridge.',
+    'Stand back, everyone. {W} has entered the chat.',
+    '{W}? In this economy?'
+  ];
+  function roundHighlights(R, board) {
+    var out = [], rows = R.rows;
+    function nm(list) { return list.map(function (r) { return r.p.name; }).join(' & '); }
+    var all = Object.keys(R.counts).sort(function (a, b) { return b.length - a.length || (a < b ? -1 : 1); });
+    var lw = all[0];
+    if (lw && lw.length >= 5) {
+      var cap = LONG_CAPS[hashStr(lw) % LONG_CAPS.length];
+      out.push({ h: 'Longest word', kind: 'long', word: lw, path: board && board.words && board.words.get(lw), who: R.finders[lw].map(function (p) { return p.name; }).join(' & '),
+        b: cap.replace('{n}', lw.length) });
+    }
+    if (rows.length > 1) {
+      var least = Math.min.apply(null, rows.map(function (r) { return r.list.length; })), k = Math.floor(least / 5) * 5;
+      if (k >= 5) out.push({ h: 'Team effort', b: 'Every player found at least ' + k + ' words this round' });
+      var top = rows[0].score, second = rows[1].score;
+      var tied = rows.filter(function (r) { return r.score === top; });
+      if (tied.length > 1 && top > 0) out.push({ h: 'Dead heat', b: nm(tied) + ' tied on ' + plural(top, 'point', 'points') });
+      else if (top - second > 0 && top - second <= 2) out.push({ h: 'Photo finish', b: rows[0].p.name + ' pipped ' + rows[1].p.name + ' by ' + plural(top - second, 'point', 'points') });
+      else if (second > 0 && top >= second * 2) out.push({ h: 'Runaway win', b: rows[0].p.name + ' scored more than double everyone else' });
+      var lone = rows.slice().sort(function (a, b) { return b.uniques - a.uniques; })[0];
+      if (lone && lone.uniques >= 3) out.push({ h: 'Lone ranger', b: lone.p.name + ' found ' + lone.uniques + ' words nobody else did' });
+    }
+    if (all.length >= 30) out.push({ h: 'Word storm', b: all.length + ' different words found between you' });
+    return out;
+  }
+  function miniBoard(board, path, cls) {
+    if (!board || !board.cells) return '';
+    var lit = {}; (path || []).forEach(function (i, k) { lit[i] = k + 1; });
+    return '<div class="mini-board ' + (cls || '') + '" style="--n:' + board.n + '">' + board.cells.map(function (c, i) {
+      return '<span' + (lit[i] ? ' class="lit" style="animation-delay:' + (lit[i] * 0.12) + 's"' : '') + '>' + (lit[i] ? (c === 'qu' ? 'Qu' : c.toUpperCase()) : '') + '</span>';
+    }).join('') + '</div>';
+  }
+  function highlightCard(lines, board) {
+    var el = document.createElement('div');
+    el.className = 'hl-card';
+    if (!lines.length) { el.hidden = true; return { el: el, stop: function () {} }; }
+    var i = 0, t = null;
+    function show() {
+      var x = lines[i % lines.length];
+      var body = esc(x.b);
+      if (x.kind === 'long') body = esc(x.b).replace('{W}', '<b>' + esc(x.word.toUpperCase()) + '</b>') + '<small>' + esc(x.who) + '</small>';
+      el.innerHTML = (x.kind === 'long' ? miniBoard(board, x.path, 'hl-mini') : '') +
+        '<div class="hl-main"><span class="hl-ribbon">' + esc(x.h) + '</span><p>' + body + '</p></div>';
+      el.classList.remove('hl-in'); void el.offsetWidth; el.classList.add('hl-in');
+      i++;
+    }
+    show();
+    if (lines.length > 1) t = setInterval(function () { if (!el.isConnected) { clearInterval(t); return; } show(); }, 5000);
+    return { el: el, stop: function () { clearInterval(t); } };
+  }
+  function ordinal(n) { var s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
 
   // players: [{key, id?, name, avatar, words, hinted?, me?}]
   // opts: {board, session | (prev, trivia, round), save, rid, at, actions:[{label, cls, icon, run}], note, onReady,
@@ -1557,6 +1651,16 @@
     var R = computeRound(players, scoring);
     // Every player's score goes on this phone's Party leaderboard. The round id stops the same
     // score being counted twice when phones swap scores.
+    // Personal bests: a player beats their best Party score on this board (they need an earlier score).
+    var pbs = {};
+    (function () {
+      var bk = boardKey('party', cfg.n, cfg.easy), old = (S.boards[bk] || []).concat(sharedList(bk));
+      R.rows.forEach(function (r) {
+        var nm = String(r.p.name).toLowerCase(), best = -1;
+        old.forEach(function (e) { if (String(e.name).toLowerCase() === nm && e.score > best) best = e.score; });
+        if (best >= 0 && r.score > best) pbs[r.p.key || r.p.id || r.p.name] = true;
+      });
+    })();
     if (opts.save) {
       var rid = opts.rid || newId(), at = opts.at || Date.now();
       R.rows.forEach(function (r) { addScore('party', cfg.n, cfg.minLen, r.p, r.score, r.list.length, { id: rid + ':' + (r.p.key || r.p.name), at: at, easy: cfg.easy }); });
@@ -1580,6 +1684,7 @@
     var words = Object.keys(R.counts).map(function (w) { return { w: w, base: scoreOf(w, scoring), unique: R.unique.has(w), who: R.finders[w] }; });
     var seq = words.filter(function (x) { return !x.unique; }).sort(function (a, b) { return a.base - b.base || (a.w < b.w ? -1 : 1); })
       .concat(words.filter(function (x) { return x.unique; }).sort(function (a, b) { return a.base - b.base || a.w.length - b.w.length || (a.w < b.w ? -1 : 1); }));
+    var nShared = seq.filter(function (x) { return !x.unique; }).length, nUni = seq.length - nShared;
     var gems = [], longest = '';
     if (opts.board && opts.board.words) {
       var bw = Array.from(opts.board.words.keys()).filter(function (w) { return !opts.board.easy || isEasyWord(w); });
@@ -1593,22 +1698,26 @@
       '<header class="band show-band"><div class="band-row"><div class="eyebrow" style="text-align:left">Round ' + round + ' · ' + (scoring === 'rarity' ? 'Rarity scoring' : 'Party') + '</div>' +
       (controls ? '<div style="display:flex;gap:8px"><button class="band-btn" data-speed aria-pressed="false">⏩ Speed up</button><button class="band-btn" data-skip>Skip</button></div>' : '') + '</div>' +
       '<div class="show-title" data-title>Counting the words…</div>' +
-      '<div class="sub">Shared words score normally. Words only one player found score double.</div></header>' +
+      '</header>' +
       '<div class="scroll"><div class="show">' +
       '<section class="battle" style="--cols:' + N + '">' +
+      (opts.board && opts.board.cells ? '<div class="rv-top"><div class="rv-board" data-rvb style="--n:' + opts.board.n + '">' + opts.board.cells.map(function (c, i) { return '<span data-rvt="' + i + '">' + (c === 'qu' ? 'Qu' : c.toUpperCase()) + '</span>'; }).join('') + '</div>' +
+        '<div class="rv-meter"><div class="rv-num"><small>Total words</small><b>' + seq.length + '</b></div><div class="rv-track">' +
+        '<div class="rv-seg gold" style="flex-grow:' + nUni + '"' + (nUni ? '' : ' hidden') + '><i data-fillu></i></div>' +
+        '<div class="rv-seg" style="flex-grow:' + nShared + '"' + (nShared ? '' : ' hidden') + '><i data-fills></i></div></div><div class="rv-num"><small>Words counted</small><b data-counted>0</b></div></div></div>' : '') +
       '<div class="pop-zone" data-pop aria-live="polite"></div>' +
       '<div class="bstage"><div class="blabels" data-labels></div><div class="bcols">' +
       P.map(function (x) {
-        return '<div class="bcol"><span class="bsc" data-score="' + x.idx + '">0</span><div class="bbar" data-bar="' + x.idx + '" style="background:' + BAR_COLS[x.idx % BAR_COLS.length] + '"></div></div>';
+        return '<div class="bcol" data-col="' + x.idx + '"><span class="bsc" data-score="' + x.idx + '">0</span><div class="bbar" data-bar="' + x.idx + '" data-rank="0"><span class="bplace" data-place="' + x.idx + '"></span></div></div>';
       }).join('') + '</div></div>' +
       '<div class="bnames">' + P.map(function (x) {
-        return '<div class="bname">' + avatar(x.p.avatar, N > 5 ? 32 : 40) + '<b>' + esc(x.p.name) + '</b>' + (x.p.me ? '<small>you</small>' : '') + '<span class="ready-chip" data-ready="' + x.idx + '" hidden>✓ Ready</span></div>';
+        return '<div class="bname"><span class="bav" data-av="' + x.idx + '">' + avatar(x.p.avatar, N > 5 ? 36 : 46) + '</span><b>' + esc(x.p.name) + '</b>' + (x.p.me ? '<small>you</small>' : '') + '<span class="pb-chip" data-pb="' + x.idx + '" hidden>★ Personal best!</span><span class="ready-chip" data-ready="' + x.idx + '" hidden>✓ Ready</span></div>';
       }).join('') + '</div></section>' +
       '<div data-trivia></div>' +
-      '<section class="show-words"><span class="label">Words · tap one to see what it means</span><div class="stream" data-stream></div><div data-gems></div></section>' +
+      '<section class="show-words">' + rulesCard(scoring, true) + '<span class="label">Words · tap one to see what it means</span><div class="stream" data-stream></div><div data-gems></div></section>' +
       '</div><div class="show-actions" data-actions hidden></div></div>' +
       (opts.onReady ? '<div class="ready-bar"><button class="btn ready-btn" data-readyme>' + I.play + 'Ready for next round</button></div>' : '')
-    );
+    , 'show-screen');
     var el = scr.el, stream = $('[data-stream]', el), pop = $('[data-pop]', el), done = false, timers = [], tv = null;
     var rme = $('[data-readyme]', el);
     if (rme) rme.onclick = function () {
@@ -1617,14 +1726,59 @@
       buzz(30); Snd.good(3); opts.onReady();
     };
     function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
-    scr.cleanup = function () { timers.forEach(clearTimeout); clearTimeout(watch); if (tv) tv.stop(); $$('.fly-chip').forEach(function (c) { c.remove(); }); };
+    var hl = null, moodT = {};
+    scr.cleanup = function () { window.removeEventListener('resize', positionBadges); clearTimeout(posT); timers.forEach(clearTimeout); clearTimeout(watch); if (tv) tv.stop(); if (hl) hl.stop(); Object.keys(moodT).forEach(function (k) { clearTimeout(moodT[k]); }); $$('.fly-chip').forEach(function (c) { c.remove(); }); };
 
     // Bars rise against the highest score so far, like a live battle.
     function drawBars() {
       var mx = Math.max(8, Math.max.apply(null, P.map(function (x) { return x.score; })));
+      var anyS = P.some(function (x) { return x.score > 0; });
       P.forEach(function (x) {
         $('[data-bar="' + x.idx + '"]', el).style.height = Math.max(6, Math.round(x.score / mx * 100)) + '%';
+        var place = 1 + P.filter(function (y) { return y.score > x.score; }).length;
+        var pe = $('[data-place="' + x.idx + '"]', el);
+        pe.textContent = anyS ? ordinal(place) : '';
+        pe.className = 'bplace p' + place;
+        $('[data-bar="' + x.idx + '"]', el).setAttribute('data-rank', anyS ? Math.min(place, 4) : 0);
       });
+    }
+    // Avatars react when a word lands: heart eyes for a word nobody else found, a smile for a shared one.
+    function setMood(x, mood) {
+      var a = $('[data-av="' + x.idx + '"]', el); if (!a) return;
+      a.innerHTML = avatar(x.p.avatar, N > 5 ? 36 : 46, mood);
+      a.classList.remove('react'); void a.offsetWidth; a.classList.add('react');
+      clearTimeout(moodT[x.idx]);
+      moodT[x.idx] = setTimeout(function () { a.innerHTML = avatar(x.p.avatar, N > 5 ? 36 : 46); a.classList.remove('react'); }, 1300 / speed);
+    }
+    function plusPop(x, add, gold) {
+      var col = $('[data-col="' + x.idx + '"]', el), sc = $('[data-score="' + x.idx + '"]', el);
+      var d = document.createElement('span');
+      d.className = 'bplus' + (gold ? ' gold' : '');
+      d.textContent = '+' + add;
+      d.style.top = (sc.offsetTop - 8) + 'px';
+      col.appendChild(d);
+      setTimeout(function () { d.remove(); }, 1100);
+    }
+    // The word's path lights up on the board, letter by letter.
+    var counted = 0, cShared = 0, cUni = 0, rvb = $('[data-rvb]', el);
+    function lightPath(x) {
+      if (!rvb) return;
+      $$('.lit', rvb).forEach(function (t) { t.classList.remove('lit', 'gold'); });
+      var path = opts.board.words && opts.board.words.get(x.w);
+      if (!path) return;
+      var each = Math.min(110, (gap * 0.4 * 0.7) / path.length);
+      path.forEach(function (i, k) {
+        later(function () { var t = $('[data-rvt="' + i + '"]', rvb); if (t) t.classList.add('lit'); if (t && x.unique) t.classList.add('gold'); }, k * each / speed);
+      });
+    }
+    // The meter has two parts: shared words fill the bottom, then words only one player found fill the gold top.
+    function countUp(x) {
+      counted++;
+      if (x && x.unique) cUni++; else if (x) cShared++;
+      var c = $('[data-counted]', el), fs = $('[data-fills]', el), fu = $('[data-fillu]', el);
+      if (c) c.textContent = counted;
+      if (fs) fs.style.height = Math.round(cShared / Math.max(1, nShared) * 100) + '%';
+      if (fu) { fu.style.height = Math.round(cUni / Math.max(1, nUni) * 100) + '%'; if (x && x.unique) { fu.parentNode.classList.remove('shine'); void fu.offsetWidth; fu.parentNode.classList.add('shine'); } }
     }
     drawBars();
 
@@ -1644,13 +1798,42 @@
     ['win', 'lose'].forEach(function (kind) {
       (prev[kind] || []).forEach(function (k) { var i = idxOf(k); if (i >= 0) makeBadge(kind, i, false); });
     });
-    function moveLabels(animated) {
+    requestAnimationFrame(positionBadges);
+    // Labels sit just above their player's bar. From round 2 they follow whoever is first and last
+    // while the words are counted; in round 1 they only appear once every score is in.
+    var liveLabels = round > 1, liveKey = '';
+    // Measured from the real layout once the bars have finished growing, so a label sits right on its score.
+    var posT = null;
+    function placeNow() {
+      if (!labelsEl.isConnected) return;
+      var base = labelsEl.getBoundingClientRect().bottom;
+      badges.forEach(function (b) {
+        var sc = $('[data-score="' + b.i + '"]', el); if (!sc) return;
+        b.el.style.bottom = Math.max(0, Math.round(base - sc.getBoundingClientRect().top + 2)) + 'px';
+      });
+    }
+    function positionBadges() { placeNow(); clearTimeout(posT); posT = setTimeout(placeNow, 600); }
+    function liveLab() {
+      var hi = Math.max.apply(null, P.map(function (x) { return x.score; })), lo = Math.min.apply(null, P.map(function (x) { return x.score; }));
+      return {
+        win: hi > 0 ? P.filter(function (x) { return x.score === hi; }).map(function (x) { return x.key; }) : [],
+        lose: N > 1 && lo < hi ? P.filter(function (x) { return x.score === lo; }).map(function (x) { return x.key; }) : []
+      };
+    }
+    function followLeaders() {
+      if (!liveLabels || done) return;
+      var t = liveLab(), k = JSON.stringify(t);
+      if (k !== liveKey) { liveKey = k; moveLabels(t, true, true); }
+      positionBadges();
+    }
+    window.addEventListener('resize', positionBadges);
+    function moveLabels(target, animated, quiet) {
       ['win', 'lose'].forEach(function (kind) {
-        var want = (lab[kind] || []).map(idxOf).filter(function (i) { return i >= 0; });
+        var want = (target[kind] || []).map(idxOf).filter(function (i) { return i >= 0; });
         var have = badges.filter(function (b) { return b.kind === kind; });
         var keep = have.filter(function (b) { return want.indexOf(b.i) >= 0; });
         var spare = have.filter(function (b) { return want.indexOf(b.i) < 0; });
-        keep.forEach(function (b) { if (animated) { b.el.classList.remove('bounce'); void b.el.offsetWidth; b.el.classList.add('bounce'); } });
+        keep.forEach(function (b) { if (animated && !quiet) { b.el.classList.remove('bounce'); void b.el.offsetWidth; b.el.classList.add('bounce'); } });
         want.forEach(function (i) {
           if (keep.some(function (b) { return b.i === i; })) return;
           var b = spare.shift();
@@ -1662,7 +1845,8 @@
           if (animated) { b.el.classList.add('gone'); setTimeout(function () { b.el.remove(); }, 600); } else b.el.remove();
         });
       });
-      if (animated && badges.length) WMSound.sparkle();
+      positionBadges();
+      if (animated && !quiet && badges.length) WMSound.sparkle();
     }
 
     function wordEl(x) {
@@ -1679,6 +1863,7 @@
         x.who.map(function (p) { return avatar(p.avatar, 24); }).join('') + '<span class="tag">' + (x.unique ? 'Unique ×2' : 'Shared') + '</span></span>' +
         (x.unique ? '<span class="sparks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' : '') + '</div>';
       if (x.unique) WMSound.sparkle(); else Snd.tone(660, 0.06, 'triangle', 0.03);
+      lightPath(x);
     }
     // ...then flies down into the bars of the players who found it.
     function flyWord(x) {
@@ -1702,12 +1887,13 @@
           if (g0 !== flyGen) return;
           var old = t.score; t.score += add;
           animateNum($('[data-score="' + t.idx + '"]', el), old, t.score, 500 / speed);
-          drawBars();
+          drawBars(); followLeaders(); plusPop(t, add, x.unique); setMood(t, x.unique ? 'love' : 'happy');
           var bar = $('[data-bar="' + t.idx + '"]', el);
           bar.classList.remove('hit'); void bar.offsetWidth; bar.classList.add('hit');
         }, dur);
       });
       if (src) src.classList.add('leave');
+      countUp(x);
       if (x.unique) WMSound.sparkle(); else WMSound.swish();
       stream.insertBefore(wordEl(x), stream.firstChild);
     }
@@ -1772,11 +1958,24 @@
       if (!o) return;
       o.classList.add('leaving-ov'); setTimeout(function () { o.remove(); }, 350);
     }
+    // The bars become a podium: places in gold, silver and bronze, and personal bests.
+    function podium(animated) {
+      if (rvb) $$('.lit', rvb).forEach(function (t) { t.classList.remove('lit', 'gold'); });
+      $('.battle', el).classList.add('final');
+      var any = false;
+      P.forEach(function (x) {
+        if (!pbs[x.key]) return;
+        var c = $('[data-pb="' + x.idx + '"]', el); if (c) { c.hidden = false; any = true; }
+      });
+      if (animated && any) WMSound.sparkle();
+    }
     function finish() {
       if (done) return;
       done = true;
       clearTimeout(watch);
       pop.innerHTML = '';
+      hl = highlightCard(roundHighlights(R, opts.board), opts.board);
+      pop.classList.add('hl-zone'); pop.appendChild(hl.el);
       var sk = $('[data-skip]', el); if (sk) sk.remove();
       var sp = $('[data-speed]', el); if (sp) sp.remove();
       tv = triviaCard(trivia);
@@ -1789,7 +1988,7 @@
     }
     step(1400, function () { showGems(true); });
     step(1800, function () { title(); celebrate(); });
-    step(4200, function () { closeStage(); moveLabels(true); });
+    step(4200, function () { closeStage(); podium(true); moveLabels(lab, true); });
     step(1600, finish);
 
     function setSpeed(s) {
@@ -1808,7 +2007,8 @@
       P.forEach(function (x) { x.score = x.final; $('[data-score="' + x.idx + '"]', el).textContent = x.final; });
       drawBars();
       stepAt = steps.length;
-      showGems(false); title(); moveLabels(false); finish();
+      if (rvb) { counted = seq.length - 1; cShared = nShared; cUni = nUni; countUp(); }
+      showGems(false); title(); podium(false); moveLabels(lab, false); finish();
     }
     if (controls) {
       $('[data-speed]', el).onclick = function () { setSpeed(speed === 1 ? 3 : 1); if (opts.onSpeed) opts.onSpeed(speed); };
@@ -1835,9 +2035,10 @@
 
   // ---------- Leaderboards ----------
   var lbScope = 'mine';
-  var lbEasy = false;
+  var lbEasy = false, lbC90 = true;
   function leaderboards(back, startTab, startSize, startEasy) {
-    var tab = startTab && startTab !== 'zen' ? startTab : 'classic', size = startSize || 4;
+    if (startTab === 'classic90' || startTab === 'classic') lbC90 = startTab === 'classic90';
+    var tab = startTab === 'classic90' ? 'classic' : startTab && startTab !== 'zen' ? startTab : 'classic', size = startSize || 4;
     if (startEasy !== undefined) lbEasy = !!startEasy;
     var scr = mount(backBand('Leaderboards') + '<div class="scroll" data-body></div>');
     on(scr.el, '[data-back]', 'click', back);
@@ -1862,13 +2063,15 @@
       } else {
         html += '<div class="seg">' + [4, 5, 6].map(function (n) { return '<button data-size="' + n + '" aria-pressed="' + (size === n) + '">' + n + ' × ' + n + '</button>'; }).join('') + '</div>' +
           '<div class="seg level"><button data-level="0" aria-pressed="' + !lbEasy + '">Normal</button><button data-level="1" aria-pressed="' + lbEasy + '">Easy</button></div>' +
-          rowsHtml(get(tab + ':' + size + (lbEasy ? ':e' : '')));
+          (tab === 'classic' ? '<div class="seg"><button data-c90="1" aria-pressed="' + lbC90 + '">90 seconds</button><button data-c90="0" aria-pressed="' + !lbC90 + '">3 minutes</button></div>' : '') +
+          rowsHtml(get((tab === 'classic' && lbC90 ? 'classic90' : tab) + ':' + size + (lbEasy ? ':e' : '')));
       }
       var body = $('[data-body]', scr.el);
       body.innerHTML = html;
       on(body, '[data-tab]', 'click', function (e) { tab = e.currentTarget.getAttribute('data-tab'); render(); });
       on(body, '[data-scope]', 'click', function (e) { lbScope = e.currentTarget.getAttribute('data-scope'); render(); });
       on(body, '[data-level]', 'click', function (e) { lbEasy = e.currentTarget.getAttribute('data-level') === '1'; render(); });
+      on(body, '[data-c90]', 'click', function (e) { lbC90 = e.currentTarget.getAttribute('data-c90') === '1'; render(); });
       on(body, '[data-size]', 'click', function (e) { size = +e.currentTarget.getAttribute('data-size'); render(); });
     }
     render();
@@ -1940,9 +2143,11 @@
       var st = S.settings;
       var body = $('[data-body]', scr.el);
       body.innerHTML =
-        '<div class="card"><span class="label">Colours</span><div class="seg">' +
-        '<button data-theme="auto" aria-pressed="' + (st.theme === 'auto') + '">Match phone</button><button data-theme="original" aria-pressed="' + (st.theme === 'original') + '">Original</button><button data-theme="dark" aria-pressed="' + (st.theme === 'dark') + '">Dark</button></div>' +
-        '</div>' +
+        '<div class="card"><span class="label">Colour scheme</span><div class="seg">' +
+        '<button data-scheme="warm" aria-pressed="' + (st.scheme !== 'party') + '"><span class="sw-dot warm"></span>Warm</button><button data-scheme="party" aria-pressed="' + (st.scheme === 'party') + '"><span class="sw-dot party"></span>Party</button></div>' +
+        '<span class="label">Light or dark</span><div class="seg">' +
+        '<button data-theme="auto" aria-pressed="' + (st.theme === 'auto') + '">Match phone</button><button data-theme="original" aria-pressed="' + (st.theme === 'original') + '">Light</button><button data-theme="dark" aria-pressed="' + (st.theme === 'dark') + '">Dark</button></div>' +
+        '<p class="hint-text">Each phone and the big screen keep their own choice.</p></div>' +
         '<div class="card"><b style="font-size:18px">Hints</b>' +
         '<p class="hint-text">A lightbulb pops up above the grid when you haven\u2019t made a move for a while. It stays for 3 seconds. You can also change this from the \u2630 menu during a game.</p>' +
         hintControls() + '</div>' +
@@ -1955,6 +2160,7 @@
         '<p class="hint-text" style="text-align:center">Word list: ' + WORDS.length.toLocaleString() + ' British English words' + (EASY ? ' (' + EASY.size.toLocaleString() + ' everyday words for Easy)' : '') + '.<br>Version ' + APP_VERSION + '</p>';
       bindHintControls(body, render);
       on(body, '[data-theme]', 'click', function (e) { st.theme = e.currentTarget.getAttribute('data-theme'); st.themeChosen = true; save(); applyTheme(); render(); });
+      on(body, '[data-scheme]', 'click', function (e) { st.scheme = e.currentTarget.getAttribute('data-scheme'); save(); applyTheme(); render(); });
       bindSoundSettings(body, render);
       on(body, '[data-tg]', 'click', function (e) { var k = e.currentTarget.getAttribute('data-tg'); st[k] = !st[k]; save(); render(); if (k === 'vibrate') buzz(20); });
       $('[data-profile]', body).onclick = function () { editMyProfile(function () { settings(back); }); };

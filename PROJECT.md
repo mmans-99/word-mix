@@ -10,9 +10,11 @@ A Boggle-style word game for the family, played on phones. Swipe across touching
 
 ## Look and feel (agreed design decisions)
 
-- Colourful and bright but not childish, and not the usual "AI look". Warm palette in the direction of Scrabble GO. Font: Bricolage Grotesque.
+- Colourful and bright but not childish, and not the usual "AI look". Font: Bricolage Grotesque for text, Montserrat (800–900) for headings, numbers, tiles and buttons (v27).
+- **Colour schemes (v27):** Warm (default, Scrabble GO direction) and Party (Boggle Party direction: sky-blue to periwinkle, dark plum tiles, aqua and mint buttons, orange-to-pink results). Chosen in Settings, separately from light or dark. Each device keeps its own.
+- **Chunky look (v27):** thick dark outlines, solid ledges, gradient backgrounds. Inspired by Netflix's Boggle Party, with our own artwork, names and captions (never their characters or text).
 - All tiles are one colour. The user dislikes multi-coloured tiles.
-- Colour themes: Original and Dark, with Auto following the phone's dark mode. The Original colours are protected so browser dark modes (Samsung Internet) don't repaint them.
+- Light or dark: Match phone, Light (was "Original") and Dark. The Original colours are protected so browser dark modes (Samsung Internet) don't repaint them.
 - Slow, satisfying animations. Results reveal slowly, with a Speed up button and Skip (in Party, only the host has them, and they change every screen).
 - Opening screen with player names, avatars and the mode choice.
 - No pinch zoom on phones (v25). Double-tap zoom is off too.
@@ -25,7 +27,7 @@ A Boggle-style word game for the family, played on phones. Swipe across touching
 - **No twist or rotate** feature, by decision.
 - **During play** there's no found-words list and no per-word points. Everything is tallied at the end. The header shows the clock and the number of words found.
 - **Feedback:** valid words flash green with a sound. A bad move (a tile that isn't touching or is already used) plays a soft buzz. "Not a word" and "Already found" each have their own sound.
-- **Round start (v25)** happens on the real board. The empty board shakes with a dice-shake sound, the tiles drop in one by one, and the letters roll through random letters during beep, beep, BEEP ("3", "2", "Go!"). On Go the tiles settle on the real letters in a quick ripple. The rolling letters are random, never the real ones, so nobody gets a head start. Every phone's countdown lasts exactly as long, so Party phones start together. The word bar says "Get ready…" until Go.
+- **Round start (v25, restyled v27)** happens on the real board. The "3, 2, Go!" is 3D-style, and the round's settings show as badges under "Get ready…" (board size, time, shortest word, Easy, Rarity). The empty board shakes with a dice-shake sound, the tiles drop in one by one, and the letters roll through random letters during beep, beep, BEEP ("3", "2", "Go!"). On Go the tiles settle on the real letters in a quick ripple. The rolling letters are random, never the real ones, so nobody gets a head start. Every phone's countdown lasts exactly as long, so Party phones start together. The word bar says "Get ready…" until Go.
 - **Last 10 seconds:** the music speeds up and a ticking plays over it. Urgent beeps sound in the final 3 seconds, then a whistle.
 - **In-game ☰ menu:** pause, hint settings, Sound effects switch, Music switch, quit.
 
@@ -45,7 +47,7 @@ A Boggle-style word game for the family, played on phones. Swipe across touching
 ## Modes
 
 Solo modes:
-- **Classic:** 3 minutes.
+- **Classic:** 90 seconds (default) or 3 minutes, with separate leaderboards (v27).
 - **Blitz:** 1 minute.
 - **Survival:** start with 1 minute. Every word adds time (3 letters +3s, 4 letters +5s, 5 letters +7s, more for longer words), and the clock speeds up as you go.
 - **Rarity:** 3 minutes with rarity scoring.
@@ -54,7 +56,7 @@ Solo modes:
 
 Together:
 - **Pass and play:** 2 to 8 players take turns on one phone. Each player can be ticked as "Child".
-- **Party:** 2 to 8 players, each on their own phone, phone to phone (see below). Round length 1, 2 or 3 minutes, scoring by length or rarity.
+- **Party:** 2 to 8 players, each on their own phone, phone to phone (see below). Round length 1 min, 90s (default, v27), 2 or 3 minutes, scoring by length or rarity.
 
 ## Difficulty: Normal and Easy
 
@@ -88,6 +90,7 @@ Together:
 - **Big-screen host mode:** the host device doesn't play. It shows the live "words found so far" for each player and the results for everyone to watch.
 - The host decides everything: it makes the board, starts the rounds and works out the scores. A phone that rejoins replaces its old connection.
 - The screen stays awake during play and setup.
+- **Results (v27 additions):** a board lights up each word's path; a split meter fills pink for shared words then gold for words only one player found; "+points" float over the bars; avatars get heart eyes (word only they found) or smiling eyes (shared); bars are coloured by current place (gold, aqua, pink, then plain); places show in the bars; Winner and Loser labels sit on the bars (round 1: only at the end; later rounds: start on last round's holders and follow first and last live); "★ Personal best!"; round highlights (Longest word with a mini board and caption, Team effort, Dead heat, Photo finish, Runaway win, Lone ranger, Word storm); scoring rules card; a one-screen layout on TVs and tablets.
 - **Results (v26 bar battle):** each player has a bar with their avatar and name underneath. Each word pops up above the bars, then flies into the bars of the players who found it, and the bars rise like a live battle. Shared words come first, then unique ones with sparkles. Default speed is about 15% quicker than v25.
   - **Host in control:** the host's screen (or the big screen) runs the reveal and every phone shows the same word at the same moment. Only the host has Speed up and Skip, and they change every screen. A phone that loses touch with the host finishes the reveal by itself.
   - **Each round is scored on its own.** No running totals. The bars stay up at the end.
@@ -122,7 +125,7 @@ Together:
 
 ## Settings
 
-Profile (name and avatar) and Child profile toggle; theme (Auto, Original, Dark); hint frequency and 3-letter-only hints; vibration; sound effects, music, both volume sliders and sound choices. The version number shows at the bottom.
+Profile (name and avatar) and Child profile toggle; colour scheme (Warm, Party); light or dark (Match phone, Light, Dark); hint frequency and 3-letter-only hints; vibration; sound effects, music, both volume sliders and sound choices. The version number shows at the bottom.
 
 ## Word lists
 

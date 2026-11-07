@@ -6,13 +6,19 @@ Remember: plan first, and no code until the user says to write it (see `CLAUDE.m
 
 - [ ] **Easy mode word checking:** Easy currently accepts any real word you find (only boards, hints and missed words use everyday words). Should Easy only accept everyday words? It's a one-line change.
 - [ ] **Board choosing speed on phones:** boards now take about 60–100ms to choose on a computer, maybe up to about 0.5s on an older phone. If starting a round feels slow, reduce the number of boards tried in `makeBoard`.
-- [ ] **Try version 26 Party on real phones:** results in step on every phone, host-only Speed up and Skip, the bar battle, crown and poop moving, trivia, the loading screen between rounds, and the child Hint button. Also the v25 round start and everyday-word boards.
+- [ ] **Try version 27 on real phones and the TV:** both colour schemes, the results show (lit paths, split meter, place colours, labels riding on the bars, personal bests, highlights) and 90-second rounds.
+- [ ] **Offline font:** Montserrat (like Bricolage) loads from Google Fonts, so a phone that has never been online shows a plain bold font. Bundle the font files if that matters.
 - [ ] **Child hint sizes:** when the child is well behind, hints lean to the longest size anyone has found, which can be an 8 or 9-letter word. Check this feels right, or cap the size (for example at 6 letters).
 
 ## Small tidy-ups (suggested, not agreed)
 
 - [ ] Remove the unused `.deal`, `.deal-wrap`, `.cd-slot` overlay styles in `styles.css`, left over from the v24 countdown.
-- [ ] Further word-list cleaning if odd or unsuitable words turn up in play.
+- [ ] Further word-list cleaning if odd or unsuitable words turn up in play. Spotted in tests: "crapped", "cripple", "penile".
+
+## Next (agreed in outline, plan before building)
+
+- [ ] **Stage C: Trophy Room.** Your stats (longest word, words per minute, wins, best win streak, achievements completed), stats per mode with time, size and shortest-word switches, achievements with levels, progress bars and category tabs (own names), and "Achievement unlocked!" in the results.
+- [ ] **Stage D: phone-as-controller screens** when a big screen hosts (simpler home and countdown screens on phones).
 
 ## Parked (don't build unless the user asks)
 
@@ -25,6 +31,7 @@ Remember: plan first, and no code until the user says to write it (see `CLAUDE.m
 
 ## Done (recent)
 
+- [x] v27: Warm and Party colour schemes, chunky look, 3D countdown with settings badges, results show upgrades (lit paths, split meter, place-coloured bars, labels on bars, reactions, personal bests, highlights, TV layout), aqua swiping in Party, 90-second rounds.
 - [x] v26: host-controlled Party results, bar battle, crown and poop labels, session trivia, loading screen between rounds, child hints in Party and pass-and-play.
 - [x] v25: boards favour everyday words; round start on the real board; no pinch zoom.
 - [x] v24: full sound engine, music, sound settings and in-game switches.

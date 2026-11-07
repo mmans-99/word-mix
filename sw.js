@@ -1,14 +1,14 @@
 /* Word Mix offline support.
    Online: always fetch the newest game files (so updates show up straight away) and keep a copy.
    Offline: use the saved copy. */
-var VERSION = 'wordmix-v26';
+var VERSION = 'wordmix-v27';
 var SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'qr.js', 'avatars.js', 'net.js', 'sound.js', 'words.txt', 'words_easy.txt', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-64.png'
 ];
 var EXTRA = [
   'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js',
-  'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&display=swap'
+  'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Montserrat:wght@700;800;900&display=swap'
 ];
 
 self.addEventListener('install', function (e) {

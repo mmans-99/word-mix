@@ -81,15 +81,39 @@
       '<polygon points="28,39 36,39 32,45" fill="#F26B21"/>' +
       '<circle cx="19" cy="41" r="3.2" fill="#F7A1B5"/><circle cx="45" cy="41" r="3.2" fill="#F7A1B5"/>' }
   ];
+  // Where each face's eyes are, for reaction faces: x of each eye, y, how big, the colour around
+  // the pupil (to cover it), and the colour of the happy-eye line.
+  var EYES = {
+    fox: { x: [24.5, 39.5], y: 34, r: 2.6, face: '#F26B21' }, cat: { x: [25, 39], y: 35, r: 3.6, face: '#A3A3B4' },
+    owl: { x: [24.5, 39.5], y: 31, r: 3.8, face: '#FFFFFF', big: 7 }, bear: { x: [25, 39], y: 32, r: 2.6, face: '#8B5E3C' },
+    panda: { x: [24.5, 39.5], y: 33.5, r: 2, face: INK, line: '#FFFFFF', big: 6 }, frog: { x: [21, 43], y: 22.5, r: 2.8, face: '#FFFFFF', big: 5.5 },
+    rabbit: { x: [25.5, 38.5], y: 37, r: 2.6, face: '#FFFFFF' }, penguin: { x: [25.5, 38.5], y: 35, r: 2.6, face: '#FFFFFF' },
+    mouse: { x: [26, 38], y: 36, r: 2.6, face: '#C9C3D6' }, koala: { x: [25, 39], y: 33, r: 2.4, face: '#A9B2BC' },
+    tiger: { x: [25, 39], y: 33, r: 2.6, face: '#F5A623' }, chick: { x: [25, 39], y: 33, r: 2.6, face: '#FFD23F' }
+  };
+  function heart(cx, cy, s) {
+    return '<path d="M' + cx + ' ' + (cy + s * 0.9) + ' C' + (cx - s * 1.7) + ' ' + (cy - s * 0.1) + ' ' + (cx - s * 0.8) + ' ' + (cy - s * 1.35) + ' ' + cx + ' ' + (cy - s * 0.4) +
+      ' C' + (cx + s * 0.8) + ' ' + (cy - s * 1.35) + ' ' + (cx + s * 1.7) + ' ' + (cy - s * 0.1) + ' ' + cx + ' ' + (cy + s * 0.9) + 'Z" fill="#E8304F" stroke="' + INK + '" stroke-width="1.2" stroke-linejoin="round"/>';
+  }
+  // mood: 'love' (heart eyes, for a word nobody else found) or 'happy' (smiling eyes, for a shared word).
+  function moodSvg(id, mood) {
+    var e = EYES[id]; if (!e || !mood) return '';
+    return e.x.map(function (x) {
+      if (mood === 'love') return heart(x, e.y + 0.6, Math.max(4.4, (e.big || e.r * 1.6)));
+      var w = Math.max(3.2, e.r * 1.3);
+      return '<circle cx="' + x + '" cy="' + e.y + '" r="' + (e.r + 0.9) + '" fill="' + e.face + '"/>' +
+        '<path d="M' + (x - w) + ' ' + (e.y + 1.2) + ' Q' + x + ' ' + (e.y - w * 1.1) + ' ' + (x + w) + ' ' + (e.y + 1.2) + '" fill="none" stroke="' + (e.line || INK) + '" stroke-width="2.2" stroke-linecap="round"/>';
+    }).join('');
+  }
   var counter = 0;
-  function svg(id, size) {
+  function svg(id, size, mood) {
     var a = A.filter(function (x) { return x.id === id; })[0] || A[0];
     size = size || 48;
     var cid = 'wmav' + (++counter);
     return '<svg class="avatar" width="' + size + '" height="' + size + '" viewBox="0 0 64 64" aria-hidden="true">' +
       '<defs><clipPath id="' + cid + '"><circle cx="32" cy="32" r="32"/></clipPath></defs>' +
       '<circle cx="32" cy="32" r="32" fill="' + a.bg + '"/>' +
-      '<g clip-path="url(#' + cid + ')">' + a.svg + '</g></svg>';
+      '<g clip-path="url(#' + cid + ')">' + a.svg + moodSvg(a.id, mood) + '</g></svg>';
   }
   root.WMAvatars = { list: A, svg: svg };
 })(window);

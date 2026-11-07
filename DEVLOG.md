@@ -2,6 +2,29 @@
 
 Newest first. Each version commit adds an entry here.
 
+## Version 27: 7 Nov 2026
+
+**Why:** the user wanted Word Mix to look and feel more like Netflix's Boggle Party TV game (own artwork and names, not copies), with a choice between their warm colours and a Boggle-style blue and purple, a livelier results show, and 90-second rounds.
+
+**Changes:**
+- **Colour schemes:** Settings → Colour scheme: Warm (default) or Party (sky-blue to periwinkle, dark plum tiles with white letters, aqua and mint buttons, orange-to-pink results background). Light or dark is a separate setting (Match phone, Light, Dark; "Original" renamed "Light"). Each device keeps its own choice. `S.settings.scheme`, `data-scheme` on `<html>`.
+- **Chunky look in both schemes:** thick dark outlines, solid ledges under buttons and cards, gradient backgrounds, and Montserrat 800–900 for headings, numbers, tiles and buttons (loaded from Google Fonts like Bricolage).
+- **Round start:** a 3D-style "3, 2, Go!", and the round's settings as badges under "Get ready…" (board size, time, shortest word, Easy, Rarity). The big screen shows the badges and a scoring rules card while a round is played.
+- **Swiping in Party** is aqua, then green for a real word, so a found word stands out.
+- **Results show (Party and pass-and-play):**
+  - A board at the top lights up each word's path, letter by letter (gold for a word only one player found).
+  - A split "words counted" meter: shared words fill the bottom (pink or orange), then words only one player found fill a gold top section that flashes for each one. Total words above, words counted below.
+  - "+points" float up over the bars when a word lands. Avatars react: heart eyes for a word only they found, smiling eyes for a shared one (new `mood` argument in `WMAvatars.svg`).
+  - Bars are coloured by current place: gold 1st, aqua 2nd, pink 3rd, one plain colour for 4th to 8th, ties share. Places (1st, 2nd…) show faintly in the bars and turn bold at the end.
+  - Winner and Loser labels sit just above each player's score. Round 1: they only appear once every score is in. Round 2 on: last round's labels start on their bars, rise with them, and jump live to whoever is first and last during the count.
+  - "★ Personal best!" under anyone who beats their best Party score on this board (needs an earlier score on this phone or in shared scores).
+  - Round highlights cycle at the end: Longest word (with a mini board of its path and a caption), Team effort, Dead heat, Photo finish, Runaway win, Lone ranger, Word storm.
+  - The scoring rules card sits above the words list.
+  - Big landscape screens (TV, tablet) have their own layout: board, meter and word on top, bars underneath, all on one screen, with the rules, trivia and words on the right.
+- **90-second rounds:** Party round lengths are 1 min, 90s, 2 min and 3 min, with 90s the default. Classic has a 90 seconds / 3 minutes switch, 90 seconds by default, stored as mode `classic90` with its own leaderboards (Classic tab has the same switch). Existing players are moved to the 90-second defaults once (`S.last.t90`). Daily stays 3 minutes.
+- Preview builder now starts the page with `<!DOCTYPE html>` and a viewport tag.
+- Tests: all pass. New `dev/tests/shots_v27.py` takes screenshots of both schemes on phone and TV sizes over two pass-and-play rounds.
+
 ## Version 26: 6 Nov 2026 (commit fa98904)
 
 **Why:** in Party, the host's and players' results ran at different speeds (each phone had its own Speed up), and a child playing Normal boards still found it hard.

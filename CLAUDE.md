@@ -4,7 +4,7 @@ Word Mix is a Boggle-style word game for phones, built as an offline web app (PW
 
 - Live game: https://mmans-99.github.io/word-mix/
 - Repo: https://github.com/mmans-99/word-mix (branch `main`, Pages serves the repo root)
-- Current version: **26** (see `APP_VERSION` in `app.js` and `VERSION` in `sw.js`)
+- Current version: **27** (see `APP_VERSION` in `app.js` and `VERSION` in `sw.js`)
 
 ## At the start of every chat
 
@@ -64,6 +64,7 @@ Tests:
 | `test_child.py` | 3-phone Party game over WebRTC with a child player: child Hint button, results in step on every phone, host-only Speed up, crown and poop labels, trivia, loading screen, round 2 with the crown moving. Add `screen` as a second argument for big-screen host mode. |
 | `test_big_screen.py` | The big-screen host results show |
 | `check_boards.py` | Average words and everyday 5-letter words per 4×4 board, Normal and Easy |
+| `shots_v27.py` | Screenshots, not a pass/fail test: `python3 dev/tests/shots_v27.py dev/out party light tv` (scheme `warm`/`party`, `light`/`dark`, `phone`/`tv`). Two pass-and-play rounds: home, countdown, play, mid-reveal, final, round 2 with live labels. |
 | `measure_boards.py` | Board stats for 4×4, 5×5 and 6×6 (add `easy` for Easy boards), with time per board |
 
 Notes:

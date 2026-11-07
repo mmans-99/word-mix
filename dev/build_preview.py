@@ -5,9 +5,9 @@
 import os
 D = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 r = lambda f: open(os.path.join(D, f), encoding='utf-8').read()
-out = ['<title>Word Mix</title>',
+out = ['<!DOCTYPE html>', '<meta charset="utf-8">', '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">', '<title>Word Mix</title>',
  '<link rel="preconnect" href="https://fonts.googleapis.com">',
- '<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&display=swap" rel="stylesheet">',
+ '<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">',
  '<style>', r('styles.css'), '</style>', '<main id="app"></main>',
  '<script type="text/plain" id="wm-words">' + r('words.txt').strip() + '</script>',
  '<script type="text/plain" id="wm-easy">' + r('words_easy.txt').strip() + '</script>',
